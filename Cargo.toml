@@ -1,7 +1,7 @@
 [package]
 name = "easydesktop"
-version = "2.9.0"
-description = "EasyDesktop - 桌面增强工具（Rust/Tauri 重构版）"
+version = "1.0.0"
+description = "easyDesktop - 桌面增强工具（Rust/Tauri 重构版）"
 edition = "2021"
 
 [build-dependencies]

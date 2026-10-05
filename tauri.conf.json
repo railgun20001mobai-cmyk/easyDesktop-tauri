@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "easyDesktop",
-  "version": "2.9.0",
-  "identifier": "com.codevicent.easydesktop",
+  "productName": "easyDesktop-tauri",
+  "version": "1.0.0",
+  "identifier": "com.railgun20001mobai.easydesktop-tauri",
   "build": {
     "frontendDist": "frontend"
   },

@@ -2,13 +2,13 @@
 
 一个 Windows 桌面增强工具：把桌面图标收进贴边面板，桌面本身保持干净，需要时鼠标移到屏幕角落（或按快捷键）就把面板唤出来，打开文件、进目录、分类筛选、应用组、新建与重命名都在这一处完成。
 
-本仓库是 [vicent-yx/easyDesktop](https://github.com/vicent-yx/easyDesktop)（pywebview + Python 版）的重写版：交互与功能对齐上游，后端换成 Rust，运行时换成 Tauri v2 / WebView2，不再需要 Python 环境。版本号与上游基线（`2.9.0`）保持一致。
+本仓库是 [vicent-yx/easyDesktop](https://github.com/vicent-yx/easyDesktop)（pywebview + Python 版）的重写版：交互与功能对齐上游，后端换成 Rust，运行时换成 Tauri v2 / WebView2，不再需要 Python 环境。上游基线为 `2.9.0`（commit `5108267`），本项目独立编号，自 `1.0.0` 起。
 
 ![license](https://img.shields.io/badge/license-GPL--3.0-green) ![platform](https://img.shields.io/badge/platform-Windows-blue) ![framework](https://img.shields.io/badge/Tauri-v2-orange)
 
 ## 快速开始
 
-1. 到 [Releases](https://github.com/railgun20001mobai-cmyk/easyDesktop-tauri/releases) 下载 `easyDesktop_2.9.0_x64-setup.exe` 安装
+1. 到 [Releases](https://github.com/railgun20001mobai-cmyk/easyDesktop-tauri/releases) 下载 `easyDesktop-tauri_1.0.0_x64-setup.exe` 安装
 2. 启动后面板默认停在屏幕角落，鼠标移到左下角即可唤出，移开后自动收起
 3. 想彻底腾出桌面：在桌面右键 → 查看 → 取消勾选"显示桌面图标"，之后所有桌面文件都通过面板访问
 4. 程序常驻托盘，点托盘图标或齿轮可进入设置；卸载用安装目录里的 `uninstall.exe`
@@ -47,7 +47,7 @@
 
 ## 技术实现
 
-前端为原生 HTML + CSS + JS（无框架、无打包器），后端为 Rust。JS 侧通过 `pywebview_shim.js` 兼容层把调用转发到 Rust 的单一入口 `pywebview_call`，由它按方法名分发到约 43 个后端方法，因此前端与上游 Python 版基本可以逐条对照。窗口权限只声明 `core:default`（见 `capabilities/default.json`），不加载远程内容、不开文件系统通配。
+前端为原生 HTML + CSS + JS（无框架、无打包器），后端为 Rust。JS 侧通过 `pywebview_shim.js` 兼容层把调用转发到 Rust 的单一入口 `pywebview_call`，由它按方法名分发到约 43 个后端方法，因此前端与上游 Python 版基本可以逐条对照。窗口权限只声明 `core:default`（见 `capabilities/default.json`），不注册额外插件权限、不加载远程内容；由于桌面文件可能位于任意磁盘位置，本地资源协议（`asset:protocol`）的路径范围放得较宽。
 
 ```
 .

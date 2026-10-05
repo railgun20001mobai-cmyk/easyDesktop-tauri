@@ -12,7 +12,7 @@ use std::sync::Mutex;
 
 use tauri::Manager;
 
-const VERSION: &str = "2.9.0";
+const VERSION: &str = "1.0.0";
 
 /// 复制到剪贴板的文件路径（对应旧版的复制/粘贴）
 static CLIPBOARD: Mutex<Option<Vec<String>>> = Mutex::new(None);
