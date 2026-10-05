@@ -1,140 +1,133 @@
 # easyDesktop（Rust / Tauri 重构版）
 
-把桌面图标收进一个角落面板：桌面上不留图标，鼠标移到屏幕角落（或按自定义热键）就唤出面板，图标、分类、应用组、文件操作都在里面完成。
+一个 Windows 桌面增强工具：把桌面图标收进贴边面板，桌面本身保持干净，需要时鼠标移到屏幕角落（或按快捷键）就把面板唤出来，打开文件、进目录、分类筛选、应用组、新建与重命名都在这一处完成。
 
-本仓库是 [vicent-yx/easyDesktop](https://github.com/vicent-yx/easyDesktop)（pywebview + Python 版）的**衍生重写**：界面与交互保留，后端由 Python 换成 Rust，运行时由 pywebview 换成 Tauri v2 / WebView2。上游基线为 `2.9.0`（commit `5108267`），因此本项目同样以 `2.9.0` 对齐版本号。
-
-> 许可证：上游是 **GPL-3.0**，本项目作为衍生作品继续在 GPL-3.0 下发布，见 [LICENSE](LICENSE)。
+本仓库是 [vicent-yx/easyDesktop](https://github.com/vicent-yx/easyDesktop)（pywebview + Python 版）的重写版：交互与功能对齐上游，后端换成 Rust，运行时换成 Tauri v2 / WebView2，不再需要 Python 环境。版本号与上游基线（`2.9.0`）保持一致。
 
 ![license](https://img.shields.io/badge/license-GPL--3.0-green) ![platform](https://img.shields.io/badge/platform-Windows-blue) ![framework](https://img.shields.io/badge/Tauri-v2-orange)
 
-## 功能
+## 快速开始
 
-**呼出与窗口**
-- 角落热区唤出、全局热键唤出（可自定义组合键），面板贴边自动收起
-- 全屏程序（游戏）前台时不抢焦点、不误收起；多显示器 / 副屏支持
-- 系统托盘图标、开机自启
+1. 到 [Releases](https://github.com/railgun20001mobai-cmyk/easyDesktop-tauri/releases) 下载 `easyDesktop_2.9.0_x64-setup.exe` 安装
+2. 启动后面板默认停在屏幕角落，鼠标移到左下角即可唤出，移开后自动收起
+3. 想彻底腾出桌面：在桌面右键 → 查看 → 取消勾选"显示桌面图标"，之后所有桌面文件都通过面板访问
+4. 程序常驻托盘，点托盘图标或齿轮可进入设置；卸载用安装目录里的 `uninstall.exe`
 
-**视图与布局**
-- 网格视图 / 列表视图（整行）双布局，切换带动效；切换按钮图标提示"点下去会切到哪一面"
-- 分类栏：按分类过滤、分类排序可拖拽、分类增删改
-- 图标级图片缩略图预加载与缓存
+需要 WebView2 Runtime（Windows 11 自带，Windows 10 可在设置中勾选自动下载或另行安装）。
 
-**批量操作与拖拽重排**
-- `Ctrl` 点击多选、`Shift` 拖动框选（橡皮筋，贴边自动翻页）、`Esc` 取消
-- 手机桌面式重排：抓起时原位被其他图标填满不留空，全程只有一个跟手虚槽，其余图标实时让位；松手后虚槽才展开成 N 格
-- 拖起预览：≤3 个叠真实图标，>3 个叠前三个 + 数量气泡
-- 拖拽期间可用**滚轮**翻页；落点带迟滞带，指针在中线来回蹭不会引起邻居抽搐
-- 拖进应用组即加入该组；从组视图拖出即移出该组
+## 界面与用法
 
-**文件操作**
-- 单击打开、双击在资源管理器中定位
-- 新建文件（docx / xlsx / pptx / txt / 文件夹）、重命名、删除、粘贴剪贴板内容
-- 自定义图标（提取 exe/lnk 图标并缓存）
-- 搜索（含拼音匹配）
+**唤出与收起**
+- 角落热区唤出，或自定义全局热键唤出（组合键可在设置里改）
+- 面板可停靠位置、收起方式（离开面板即收 / 失焦即收）、热区大小都可配置
+- 全屏程序前台时不会误弹、不会抢焦点；支持多显示器与副屏
+- 系统托盘常驻，支持开机自启（可选以较高优先级启动）
+
+**浏览与打开**
+- 面板展示当前目录内容，默认为桌面；单击图标进入子目录，面包屑与返回按钮可逐级回退
+- 右键菜单：打开、在资源管理器中显示、复制、粘贴、重命名、删除、新建文件 / 文件夹 / 应用组、自定义图标
+- 新建支持 docx / xlsx / pptx / txt 与文件夹；粘贴支持从资源管理器复制的内容
+- 顶部搜索框过滤当前目录，支持拼音输入
+- 图片文件可预生成缩略图并缓存
+
+**分类与应用组**
+- 分类栏按规则归集文件，点击即可过滤；分类可新建、重命名、删除，顺序可拖拽调整
+- 应用组把多个程序收进一个图标：拖文件到组图标上即加入，从组视图拖出即移出
+
+**多选与拖拽排序**
+- `Ctrl` + 点击逐个多选，`Shift` + 拖动框选一片，`Esc` 取消
+- 拖动图标或整组图标可重排顺序，其余图标实时让位，松手落定
+- 多选拖动时以叠放的图标作为预览，数量较多时显示数量角标
+- 拖拽过程中可用滚轮翻页，长列表不必反复松手重来
+- 排序结果按目录持久化，重启后保持
 
 **外观**
-- 主题（深色 / 浅色 / 自定义）、毛玻璃与背景图设置、界面缩放
+- 深色 / 浅色 / 自定义主题，可改配色
+- 毛玻璃强度、背景图、界面缩放均可调
 
-## 技术栈与结构
+## 技术实现
 
-原生 HTML + CSS + JS 前端（无框架、无打包器），Rust 后端。JS 通过 `pywebview_shim.js` 兼容层把调用转发到 Rust 的单一入口 `pywebview_call`，由它按方法名分发到约 43 个后端方法——这样从 Python 版迁移时前端几乎不用改。窗口权限只声明了 `core:default`（见 `capabilities/default.json`），不开远程 URL、不放开文件系统通配。
+前端为原生 HTML + CSS + JS（无框架、无打包器），后端为 Rust。JS 侧通过 `pywebview_shim.js` 兼容层把调用转发到 Rust 的单一入口 `pywebview_call`，由它按方法名分发到约 43 个后端方法，因此前端与上游 Python 版基本可以逐条对照。窗口权限只声明 `core:default`（见 `capabilities/default.json`），不加载远程内容、不开文件系统通配。
 
 ```
 .
 ├── src/
-│   ├── main.rs        窗口/角落唤出/热键/托盘/自动收起（轮询与动画帧控）
+│   ├── main.rs        窗口、角落唤出与自动收起、热键、托盘、面板动画
 │   ├── api.rs         pywebview_call 分发：文件操作、配置、分类、应用组
-│   ├── files.rs       目录扫描、排序持久化、新建/重命名/删除
-│   ├── icons.rs       图标提取、缓存、自定义图标
-│   ├── preview.rs     图片缩略图 base64
+│   ├── files.rs       目录扫描、排序持久化、新建 / 重命名 / 删除
+│   ├── icons.rs       系统图标提取与缓存、自定义图标
+│   ├── preview.rs     图片缩略图
 │   ├── config.rs      config.json / user_class.json / user_groups.json 读写
-│   └── win32.rs       Win32 FFI：前台窗口、全屏检测、圆角、光标、尺寸
+│   └── win32.rs       Win32 互操作：前台窗口、全屏检测、圆角、光标、尺寸
 ├── frontend/
 │   ├── easyFileDesk.html       面板骨架与内联样式
-│   ├── pywebview_shim.js       旧 bridge → Tauri invoke 适配层
-│   ├── resources/ed.js         前端主逻辑（渲染、拖拽引擎、框选、分类、组、主题）
+│   ├── pywebview_shim.js       调用桥适配层
+│   ├── resources/ed.js         前端主逻辑：渲染、拖拽、框选、分类、应用组、主题
 │   ├── resources/file_icos/    文件类型图标
 │   ├── theme/frame.css         布局与动效
 │   └── theme/theme.css         配色变量
 ├── capabilities/default.json   Tauri 权限声明
 ├── icons/                      应用图标
-├── Cargo.toml / build.rs / tauri.conf.json
-└── LICENSE
+└── Cargo.toml / build.rs / tauri.conf.json
 ```
 
-## 开发环境
+## 构建
 
-仅支持 Windows（依赖 Win32 API 与 WebView2）。
-
-1. 安装 [Rust](https://www.rust-lang.org/tools/install) stable、[Node.js](https://nodejs.org/) LTS
-2. 确保系统有 WebView2 Runtime（Win11 自带；Win10 需安装 [Evergreen Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)）
-3. 首次构建需拉取 crates 依赖；依赖已缓存在本机时可用离线模式
+环境：Windows 10 / 11、Rust stable、Node.js LTS。
 
 ```bash
-# 开发运行（带热重载）
-cargo tauri dev          # 或：npx @tauri-apps/cli@2 dev
+# 开发调试（前端改动热重载）
+npx @tauri-apps/cli@2 dev
 
-# 仅编译 release
+# 编译 release
 cargo build --release
 
-# 打安装包（NSIS）
+# 生成 NSIS 安装包，产物在 target/release/bundle/nsis/
 npx @tauri-apps/cli@2 build --bundles nsis
-# 产物：target/release/bundle/nsis/easyDesktop_<version>_x64-setup.exe
 ```
 
-国内网络访问 crates.io 受限时，加 `CARGO_NET_OFFLINE=true` 使用本地缓存：
+网络受限而依赖已在本地缓存时，可加 `CARGO_NET_OFFLINE=true` 离线构建。
 
-```bash
-CARGO_NET_OFFLINE=true npx @tauri-apps/cli@2 build --bundles nsis
-```
+注意：`frontend/` 下的资源是**编译期内嵌**进 exe 的（`tauri.conf.json` 的 `build.frontendDist`），只改前端同样需要重新编译打包；若产物疑似未更新，先执行 `cargo clean --package easydesktop` 再构建。
 
-**注意：前端资源是编译期内嵌进 exe 的**（`build > frontendDist: "frontend"`）。只改 `frontend/` 下的文件也必须重新编译打包才会生效；若怀疑嵌进去的是旧资源，先 `cargo clean --package easydesktop` 再打包。
+## 数据与备份
 
-## 运行数据
+用户数据全部保存在安装目录，卸载程序不会静默删除，迁移新机时整体拷走即可：
 
-程序把用户数据写在 **exe 同级目录**，不入仓库、也不要提交：
+| 文件 / 目录 | 内容 |
+| --- | --- |
+| `config.json` | 全部设置：触发方式、热键、面板尺寸与位置、视图、主题、缩放、各目录的图标顺序 |
+| `user_class.json` | 分类定义与成员 |
+| `user_groups.json` | 应用组 |
+| `desktopICO/` | 提取出的图标缓存，可安全删除（会自动重建） |
+| `background/` | 自定义背景图 |
+| `ed_calls.log` | 运行日志，用于排查问题；内含本机路径，公开贴出前请先脱敏 |
 
-- `config.json` —— 全部设置（触发方式、视图、分类顺序、目录排序、主题、缩放…）
-- `user_class.json` / `user_groups.json` —— 分类与应用组
-- `desktopICO/` —— 提取出的图标缓存
-- `background/` —— 用户设置的背景图
-- `ed_calls.log` —— 调用与窗口行为日志（排查用；内含本机路径）
+## 常见问题
 
-Bundle identifier 沿用上游的 `com.codevicent.easydesktop`，以保证老用户的开机自启注册项能平滑升级。
+**鼠标移到角落没反应**
+检查设置里的触发方式与停靠位置是否被改动；确认托盘里程序在运行；若开了全局热键，可直接用热键唤出。
 
-## 动效约定
+**面板挡住全屏游戏 / 游戏里唤不出**
+设置里可切换为"仅失焦收起"，并调整收起判定；全屏程序前台时面板不会主动抢焦点。
 
-前端动效统一走 CSS 变量形式的 motion token（Material Design 3 节奏：进场减速、退场加速、非对称时长）：
+**没有毛玻璃效果**
+毛玻璃依赖系统 DWM 的透明效果，系统"性能选项"里关闭透明或远程桌面环境下会被禁用。
 
-```css
---md-motion-dur-enter / -exit / -quick / -panel / -spring / -panel-in / -panel-out / -reorder
---md-motion-ease-enter / -exit / -spring
-```
+**改了文件名，图标没变**
+图标有缓存，删除安装目录下的 `desktopICO/` 后重启程序即可重新提取。
 
-两处需要人工保持同步：`--md-motion-dur-panel-in/-out` 与 `src/main.rs` 的 `PANEL_IN_MS / PANEL_OUT_MS`；`--md-motion-dur-reorder` 与 `ed.js` 的 `REORDER_MS`（JS 读不到 CSS 变量）。新增动效请复用 token，不要再写死时长和曲线。
+## 贡献
 
-## 已知限制
+欢迎 issue 和 PR。改前端请留意动效统一使用 `theme/frame.css` 里的 motion token（Material Design 3 节奏：进场减速、退场加速、非对称时长）；其中 `--md-motion-dur-panel-in / -panel-out` 需与 `src/main.rs` 的 `PANEL_IN_MS / PANEL_OUT_MS` 一致，`--md-motion-dur-reorder` 需与 `frontend/resources/ed.js` 的 `REORDER_MS` 一致。
 
-- 仅 Windows；无 macOS / Linux 后端
-- 角落唤出靠轮询光标位置实现，省电与灵敏之间取了折中（默认间隔，需要抢焦点时提速）
-- 图标提取与缩略图有缓存，改名/换图标后可能需要重新生成
-- 毛玻璃效果依赖系统 DWM，部分系统设置下会被禁用
+## 许可与声明
+
+- 代码依 **GPL-3.0** 授权，全文见 [LICENSE](LICENSE)。本作品为 [vicent-yx/easyDesktop](https://github.com/vicent-yx/easyDesktop) 的衍生作品，依同一许可证分发，须公开完整源码。
+- 仓库内的图片与字体素材不在 GPL 授权范围内，各自保留原权利人条款：`frontend/resources/` 含 Font Awesome 与 MiSans 字体，`icons/` 为应用图标；内置 `zzz` 主题所用素材来自第三方游戏，再分发前请自行替换（移除 `frontend/theme/zzz_bg.png`、`zzz_font.ttf`、`frontend/resources/theme_previews/3z.png`，以及 `theme.css` 中 `[data-theme="zzz"]` 与 `easyFileDesk.html` 的对应主题卡片即可）。
 
 ## 致谢
 
 - [vicent-yx/easyDesktop](https://github.com/vicent-yx/easyDesktop) —— 原始项目与全部产品设计
-- 上游 README 中感谢的贡献者：@CassianVale（模块化重构）、@achilng（应用组功能）
-- [AnInsomniacy/rayburst](https://github.com/AnInsomniacy/rayburst) —— MD3 motion token 与非对称时长/强调缓动的参考实现
-- [Tauri](https://tauri.app/)、[Font Awesome](https://fontawesome.com/)、[MiSans](https://misans.com/)
-
-## 第三方资源许可说明
-
-- 代码部分依 GPL-3.0 授权；**仓库内的图片与字体素材不在此授权范围内**，各自保留原权利人的条款。
-- `frontend/resources/` 含 Font Awesome 字体与图标、MiSans 字体；`icons/` 为应用图标。
-- 内置 `zzz` 主题使用的 `frontend/theme/zzz_bg.png`、`frontend/theme/zzz_font.ttf`、`frontend/resources/theme_previews/3z.png` 为第三方游戏素材，仅作个人学习用途随源码存放。二次分发前请替换为自有素材（主题机制本身通用，删掉这三个文件并移除 `theme.css` 的 `[data-theme="zzz"]` 与 `easyFileDesk.html` 的主题卡片即可）。
-
-## License
-
-GNU General Public License v3.0 only —— 见 [LICENSE](LICENSE)。
-本作品为 [vicent-yx/easyDesktop](https://github.com/vicent-yx/easyDesktop) 的衍生作品，依据 GPLv3 分发，须以相同许可证公开完整源码。
+- 上游贡献者 @CassianVale（模块化重构）、@achilng（应用组功能）
+- [Tauri](https://tauri.app/) 提供 Rust 桌面运行时；[Material Design 3](https://m3.material.io/) 与 [rayburst](https://github.com/AnInsomniacy/rayburst) 为动效节奏参考
