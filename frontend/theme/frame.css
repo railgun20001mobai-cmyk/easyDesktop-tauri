@@ -1,0 +1,1519 @@
+/* 【启动优化 P3｜风险:低】font-display:swap —— 先用系统后备字体立即显示文本（消除 FOIT 白屏等待），
+   待 5.3MB 的 MiSans 加载完成后再无感替换，避免首屏文本被字体加载阻塞。
+   注：彻底方案（MiSans 转 woff2 + CJK 子集化、FontAwesome 按需子集）属构建期改动、需在 Windows 实机
+   校验字形完整，详见 ANALYSIS_REPORT.md 与 STARTUP_OPTIMIZATION.md 的构建步骤说明。 */
+@font-face {
+    font-family: 'df';
+    src: url('/resources/MiSans-Semibold.woff') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'zzz';
+    src: url('/theme/zzz_font.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    min-height: 100vh;
+    padding: 20px;
+}
+
+.container {
+    width: 100%;
+    padding: 20px;
+    padding-top: 0px;
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.time-display {
+    font-size: 1rem;
+    font-weight: 300;
+    display: flex;
+    align-items: center;
+}
+
+.time-display i {
+    margin-right: 12px;
+    font-size: 1.5rem;
+}
+
+.files-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 25px;
+    justify-items: center;
+    /* 内容不满一屏时行高不许被拉伸（否则选中框/图标框会跟着变高） */
+    align-content: start;
+    position: relative;
+    transition: opacity var(--md-motion-dur-enter) var(--md-motion-ease-enter);
+}
+
+/* 列表视图样式 */
+.files-list {
+    width: 100%;
+    border-radius: 12px;
+    overflow: hidden;
+    position: relative;
+    transition: opacity var(--md-motion-dur-enter) var(--md-motion-ease-enter);
+}
+
+.file-list-item {
+    display: flex;
+    align-items: center;
+    /* 每行更高一档：原来 12px 内边距 + 32px 图标 = 56px；现在 14 + 40 = 68px。
+       原先是靠 height:10% 把行撑开（和内边距互相打架），改成固定行高更直观。 */
+    padding: 14px 22px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    cursor: pointer;
+    /* 只补背景：原来写 transition: all，框选 / 让位时会一次性给几十行同时挂上
+       所有可动画属性的过渡（outline、尺寸、透明度都算），列表视图的卡顿有它一份 */
+    transition: background-color var(--md-motion-dur-quick) var(--md-motion-ease-enter);
+    min-height: 68px;
+    align-items: center;
+}
+
+/* ===== 动效令牌 =====
+   参考 Material Design 3 的 motion 规范（对照 rayburst 的 Design & Motion）：
+   - 非对称时长：进场比退场长（200ms / 150ms）——新内容有时间"落下来"，退出干脆利落
+   - 强调型缓动：进场减速 cubic-bezier(0.2,0,0,1)；退场加速 cubic-bezier(0.3,0,0.8,0.15)
+   - 所有时长/曲线集中在这里，改一处全局节奏统一
+   注意：ed.js 的 uiBoxDisplayChange() 里有一份对应的毫秒数字（JS 读不到 CSS 变量），
+   调这里的话记得同步改那边。 */
+:root {
+  --md-motion-dur-enter: 200ms;
+  --md-motion-dur-exit: 150ms;
+  --md-motion-dur-quick: 110ms;
+  --md-motion-dur-panel: 300ms;
+  --md-motion-dur-spring: 300ms;
+  /* 面板整体进出场（窗口在 Rust 侧逐帧滑动，这两个值必须与 main.rs 的
+     PANEL_IN_MS / PANEL_OUT_MS 一致） */
+  --md-motion-dur-panel-in: 340ms;
+  --md-motion-dur-panel-out: 240ms;
+/* 松手：虚槽展开成 N 格，邻居再让一次位。时长由 JS 的 REORDER_MS 驱动（WAAPI），
+   这个 token 只给需要写 CSS 动画的地方用，两边改一处要同步另一处。 */
+  --md-motion-dur-reorder: 600ms;
+  --md-motion-ease-enter: cubic-bezier(0.2, 0, 0, 1);
+  --md-motion-ease-exit: cubic-bezier(0.3, 0, 0.8, 0.15);
+  /* 轻微回弹：用于对话框，先冲过一点点再回位（弹簧观感的近似） */
+  --md-motion-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* 动画 */
+/* 向上抽吸并渐隐（退场）：短、加速，让路给新内容 */
+.fade-out-up {
+  animation: suckUp var(--md-motion-dur-exit) var(--md-motion-ease-exit) forwards;
+}
+
+/* 新内容从下方淡入（进场）：长一点、减速，稳稳落位 */
+.fade-in-up {
+  animation: fadeInUp var(--md-motion-dur-enter) var(--md-motion-ease-enter) forwards;
+}
+
+/* 对话框专用：弹簧进场（关键帧本身带阻尼回弹，所以用 linear 计时） */
+.spring-in {
+  animation: springIn var(--md-motion-dur-spring) linear forwards;
+}
+
+/* 右键菜单/子菜单：更快的一档，菜单要"跟手" */
+.quick-in {
+  animation: quickIn var(--md-motion-dur-quick) var(--md-motion-ease-enter) forwards;
+}
+
+.quick-out {
+  animation: quickOut var(--md-motion-dur-quick) var(--md-motion-ease-exit) forwards;
+}
+
+/* 设置面板：从右侧轻轻滑入 */
+.panel-in {
+  animation: panelIn var(--md-motion-dur-panel) var(--md-motion-ease-enter) forwards;
+}
+
+/* ===== 微交互 =====
+   按下时轻挤 3%：只动 transform（合成器合成，不触发重排），时长用最短一档 */
+button,
+.class_bar_btn,
+.dir_btn,
+.file-selection-btn,
+.modal-btn,
+.msg_btn {
+  transition: transform var(--md-motion-dur-quick) var(--md-motion-ease-enter),
+              background-color var(--md-motion-dur-quick) var(--md-motion-ease-enter),
+              color var(--md-motion-dur-quick) var(--md-motion-ease-enter);
+}
+
+button:active,
+.class_bar_btn:active,
+.dir_btn:active,
+.file-selection-btn:active {
+  transform: scale(0.97);
+}
+
+/* 开关拨钮：滑动用强调型减速曲线，比原来的 0.4s 跟手 */
+.switch .slider:before {
+  transition: all var(--md-motion-dur-enter) var(--md-motion-ease-enter);
+}
+
+/* 无障碍：系统设置里关掉动效时全部停用（M3 规范要求） */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+/* ———————————————————————————— */
+
+.file-list-icon {
+    /* 图标 32 → 40：放大后用 -webkit-optimize-contrast 保住边缘，别糊 */
+    width: 40px;
+    height: 40px;
+    margin-right: 16px;
+    object-fit: contain;
+    image-rendering: -webkit-optimize-contrast;
+}
+
+.file-list-name {
+    flex: 1;
+    /* 文件名 14 → 15.5，比图标更克制一点，避免长名字更容易被截断 */
+    font-size: 15.5px;
+    font-weight: 500;
+}
+
+.file-list-type {
+    font-size: 13px;
+    width: 160px;
+    text-align: right;
+}
+
+/* ===== 毛玻璃设置 ===== */
+/* 依赖条件不满足时（背景为「正常」/ 毛玻璃未开）整行灰显，并禁止交互 */
+.setting-disabled {
+    opacity: .45;
+    pointer-events: none;
+}
+
+/* 自定义背景图专属图层：铺图 + 承接「磨砂效果强度」的模糊。
+   原实现把 backdrop-filter 写在 body 上——body 背后没有页面内容可模糊，
+   等于无效；把图放进独立图层用 filter:blur 才是真的模糊（内容不受影响）。 */
+body::before {
+    content: "";
+    position: fixed;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: -1;
+    background-image: var(--ed-bg-image, none);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    filter: blur(var(--ed-bg-blur, 0px));
+    transform: scale(1.06);   /* 模糊会在四周露出边缘，稍微放大补掉 */
+    pointer-events: none;
+}
+
+.setting-why {
+    margin-top: 6px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #94a3b8;
+}
+
+/* 滑块：统一样式（三个滑块同一规则，磨砂效果强度的条和上面两个同宽）。
+   填充进度由 JS 写入 --fill：左段蓝（已填充）、右段灰（未填充，任何主题下都是灰，
+   不用原生渲染——原生在深色主题下未填充段会发黑）。 */
+.sc-slider,
+.blur-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 24px;    /* 点击区大一点好抓 */
+    background: transparent;
+    cursor: pointer;
+    touch-action: none;
+}
+
+.sc-slider::-webkit-slider-runnable-track,
+.blur-slider::-webkit-slider-runnable-track {
+    height: 6px;
+    border-radius: 3px;
+    background: linear-gradient(90deg,
+        #4a90d9 0 var(--fill, 50%),
+        rgba(128, 128, 128, .35) var(--fill, 50%) 100%);
+}
+
+.sc-slider::-webkit-slider-thumb,
+.blur-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    margin-top: -5px;
+    border-radius: 50%;
+    background: #4a90d9;
+    border: 2px solid #fff;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, .35);
+}
+
+.sc-slider::-moz-range-track,
+.blur-slider::-moz-range-track {
+    height: 6px;
+    border-radius: 3px;
+    background: linear-gradient(90deg,
+        #4a90d9 0 var(--fill, 50%),
+        rgba(128, 128, 128, .35) var(--fill, 50%) 100%);
+}
+
+.sc-slider::-moz-range-thumb,
+.blur-slider::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #4a90d9;
+    border: 2px solid #fff;
+}
+
+@media (max-width: 768px) {
+    .file-list-type {
+        display: none;
+    }
+}
+
+.file-item {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px 15px;
+    border-radius: 15px;
+    transition: all var(--md-motion-dur-enter) var(--md-motion-ease-enter);
+    cursor: pointer;
+    text-decoration: none;
+    opacity: 0.9;
+    position: relative;
+    border: 1px solid rgba(255, 255, 255, 0);
+}
+
+/* 不在 .file-item 上做 translate：位移会改 hit-test，边缘悬停会反复进出 hover 闪烁 */
+.file-item:hover {
+    opacity: 1;
+    z-index: 10;
+}
+
+.file-item_hover {
+    opacity: 1;
+    z-index: 10;
+}
+
+.file-icon {
+    width: 64px;
+    height: 64px;
+    margin-bottom: 15px;
+    object-fit: contain;
+    transition: transform var(--md-motion-dur-enter) var(--md-motion-ease-enter);
+}
+
+.file-item:hover .file-icon,
+.file-item_hover .file-icon {
+    transform: translateY(-5px) scale(1.1);
+}
+
+.file-name {
+    text-align: center;
+    font-size: 14px;
+    word-break: break-word;
+    max-width: 100%;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-weight: 500;
+}
+
+.file-type {
+    font-size: 12px;
+    margin-top: 5px;
+    font-weight: 400;
+}
+
+.info-bar {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 25px;
+    padding: 15px 20px;
+    border-radius: 12px;
+    font-size: 14px;
+}
+
+/* 路径导航样式 */
+.path-navigation {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    margin: 0 20px;
+}
+
+.path-btn {
+    background: none;
+    border: none;
+    padding: 8px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all var(--md-motion-dur-quick) var(--md-motion-ease-enter);
+}
+
+.path-btn:hover {
+    transition: all var(--md-motion-dur-quick) var(--md-motion-ease-enter);
+}
+
+.path-btn i {
+    font-size: 16px;
+}
+
+.breadcrumb {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 14px;
+    white-space: nowrap;
+    overflow-x: auto;
+}
+
+.breadcrumb::-webkit-scrollbar {
+    display: none;
+}
+
+.breadcrumb-item {
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: all var(--md-motion-dur-quick) var(--md-motion-ease-enter);
+}
+
+.breadcrumb-item:hover {
+    transition: all var(--md-motion-dur-quick) var(--md-motion-ease-enter);
+}
+
+.breadcrumb-item:after {
+    content: '›';
+    margin: 0 8px;
+}
+
+.breadcrumb-item:last-child:after {
+    content: '';
+    margin: 0;
+}
+
+@media (max-width: 768px) {
+    .breadcrumb {
+        padding: 6px 8px;
+        font-size: 13px;
+    }
+    
+    .breadcrumb-item:after {
+        margin: 0 4px;
+    }
+}
+
+/* 视图切换按钮样式 */
+.view-toggle {
+    display: flex;
+    gap: 10px;
+}
+
+@media (max-width: 768px) {
+    .path-navigation {
+        margin: 10px 0;
+        order: 3;
+        width: 100%;
+    }
+    
+    .header {
+        flex-wrap: wrap;
+    }
+}
+
+.view-btn {
+    background: none;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all var(--md-motion-dur-quick) var(--md-motion-ease-enter);
+}
+
+.view-btn:hover {
+    transition: all var(--md-motion-dur-quick) var(--md-motion-ease-enter);
+}
+
+.view-btn.active {
+    transition: all var(--md-motion-dur-quick) var(--md-motion-ease-enter);
+}
+
+.view-btn i {
+    font-size: 16px;
+}
+
+/* 右键菜单样式 */
+.context-menu {
+    position: absolute;
+    border-radius: 8px;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.15);
+    z-index: 1000;
+    min-width: 180px;
+    overflow: hidden;
+    display: none;
+}
+
+.context-menu-item {
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    transition: all var(--md-motion-dur-quick) var(--md-motion-ease-enter);
+    cursor: pointer;
+}
+
+.context-menu-item i {
+    margin-right: 10px;
+    width: 20px;
+}
+
+.context-menu-item:hover {
+    transition: all var(--md-motion-dur-quick) var(--md-motion-ease-enter);
+}
+
+.context-menu-item.delete:hover {
+    transition: all var(--md-motion-dur-quick) var(--md-motion-ease-enter);
+}
+
+.context-menu-item.delete:hover i {
+    transition: all var(--md-motion-dur-quick) var(--md-motion-ease-enter);
+}
+
+/* 重命名输入框 */
+.rename-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 2000;
+    display: none;
+    backdrop-filter: blur(5px);
+}
+
+.rename-container {
+    padding: 30px;
+    border-radius: 15px;
+    width: 90%;
+    max-width: 500px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+}
+
+.rename-container h3 {
+    margin-bottom: 20px;
+    font-weight: 500;
+}
+
+.rename-input {
+    width: 100%;
+    padding: 12px 15px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    font-size: 16px;
+    margin-bottom: 20px;
+}
+
+.rename-input:focus {
+    outline: none;
+    transition: all var(--md-motion-dur-quick) var(--md-motion-ease-enter);
+}
+
+.rename-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.rename-btn {
+    padding: 10px 20px;
+    border-radius: 8px;
+    cursor: pointer;
+    border: none;
+    font-weight: 500;
+    transition: all var(--md-motion-dur-quick) var(--md-motion-ease-enter);
+}
+
+.rename-btn.confirm:hover {
+    transition: all var(--md-motion-dur-quick) var(--md-motion-ease-enter);
+}
+
+.rename-btn.cancel:hover {
+    transition: all var(--md-motion-dur-quick) var(--md-motion-ease-enter);
+}
+
+/* 删除确认对话框 */
+.delete-confirm {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 2000;
+    display: none;
+}
+
+.delete-container {
+    padding: 30px;
+    border-radius: 15px;
+    width: 90%;
+    max-width: 500px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+    text-align: center;
+}
+
+.delete-container h3 {
+    margin-bottom: 15px;
+    font-weight: 500;
+}
+
+.delete-container p {
+    margin-bottom: 25px;
+    line-height: 1.5;
+}
+
+.delete-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+}
+
+.delete-btn {
+    padding: 10px 25px;
+    border-radius: 8px;
+    cursor: pointer;
+    border: none;
+    font-weight: 500;
+    transition: all var(--md-motion-dur-quick) var(--md-motion-ease-enter);
+}
+
+.delete-btn.confirm:hover {
+    transition: all var(--md-motion-dur-quick) var(--md-motion-ease-enter);
+}
+
+.delete-btn.cancel:hover {
+    transition: all var(--md-motion-dur-quick) var(--md-motion-ease-enter);
+}
+
+.group-delete-confirm {
+    z-index: 3500;
+}
+
+.group-delete-container {
+    max-width: 460px;
+    text-align: left;
+}
+
+.group-delete-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 18px;
+}
+
+.group-delete-icon {
+    width: 52px;
+    height: 52px;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 22px;
+}
+
+.group-delete-copy {
+    flex: 1;
+    min-width: 0;
+}
+
+.group-delete-copy h3 {
+    margin: 2px 0 10px;
+}
+
+.group-delete-copy p {
+    margin: 0;
+}
+
+.group-delete-name {
+    font-weight: 700;
+    word-break: break-all;
+}
+
+.group-delete-note {
+    border-radius: 12px;
+    padding: 14px 16px;
+    line-height: 1.6;
+    font-size: 14px;
+    margin-bottom: 24px;
+}
+
+.group-delete-buttons {
+    justify-content: flex-end;
+}
+
+.search_box{
+    width: 30%;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 14px;
+    white-space: nowrap;
+    overflow-x: auto;
+}
+
+.search_box input{
+    width: 100%;
+    height: 100%;
+    border: none;
+    outline: none;
+    background: unset;
+}
+
+/* 设置按钮样式 */
+.settings-btn {
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 14px;
+    cursor: pointer;
+    border: none;
+    transition: all var(--md-motion-dur-quick) var(--md-motion-ease-enter);
+    margin-left: 8px;
+}
+
+.settings-btn:hover {
+    transition: all var(--md-motion-dur-quick) var(--md-motion-ease-enter);
+}
+
+/* 主题设置面板 */
+.theme-settings-panel {
+    margin: auto;
+    width: 400px;
+    max-width: 90%;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    z-index: 1000;
+}
+
+.settings-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    height: 10%;
+}
+
+.settings-header h3 {
+    margin: 0;
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    font-size: 18px;
+    cursor: pointer;
+    padding: 5px;
+}
+
+.settings-section h4 {
+    margin-bottom: 15px;
+    font-weight: 500;
+}
+
+.system-theme-toggle {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+}
+
+/* 开关控件 */
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 24px;
+}
+
+.switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    transition: all var(--md-motion-dur-enter) var(--md-motion-ease-enter);
+    border-radius: 24px;
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 16px;
+    width: 16px;
+    left: 4px;
+    bottom: 4px;
+    background-color: white;
+    transition: all var(--md-motion-dur-enter) var(--md-motion-ease-enter);
+    border-radius: 50%;
+}
+
+input:checked + .slider:before {
+    transform: translateX(26px);
+}
+
+/* 主题卡片 */
+.theme-cards {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 15px;
+    justify-content: flex-start;
+}
+
+.theme-card {
+    width: calc(33.33% - 7px); /* 3列布局，减去gap */
+    min-width: 100px;
+    box-sizing: border-box;
+    position: relative;
+    padding-bottom: calc(33.33% * 3/4); /* 保持4:3比例 */
+    height: 0;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all var(--md-motion-dur-quick) var(--md-motion-ease-enter);
+}
+
+.theme-card:hover {
+    transition: all var(--md-motion-dur-quick) var(--md-motion-ease-enter);
+}
+
+.theme-card.active {
+    transition: all var(--md-motion-dur-quick) var(--md-motion-ease-enter);
+}
+
+.theme-card-content {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 10px;
+}
+
+.theme-preview {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+    border-radius: 6px;
+}
+
+.theme-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.theme-card span {
+    text-align: center;
+    padding: 5px 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 13px;
+}
+
+@media (max-width: 600px) {
+    .theme-card {
+        width: calc(50% - 5px); /* 在小屏幕上显示2列 */
+        padding-bottom: calc(50% * 3/4);
+    }
+}
+
+@media (max-width: 400px) {
+    .theme-card {
+        width: 100%; /* 在非常小的屏幕上显示1列 */
+        padding-bottom: calc(100% * 3/4);
+    }
+}
+
+@media (max-width: 768px) {
+    .header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 20px;
+    }
+    
+    .files-grid {
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        gap: 20px;
+    }
+    
+    .file-icon {
+        width: 56px;
+        height: 56px;
+    }
+}
+
+@media (max-width: 480px) {
+    .time-display {
+        font-size: 1.4rem;
+    }
+    
+    .files-grid {
+        grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+        gap: 15px;
+    }
+    
+    .file-item {
+        padding: 15px 10px;
+    }
+    
+    .file-icon {
+        width: 48px;
+        height: 48px;
+    }
+    
+    .file-name {
+        font-size: 13px;
+    }
+    
+    .context-menu {
+        min-width: 160px;
+    }
+}
+
+.class_bar_btn {
+    background-color: unset;
+    cursor: pointer;
+    transition: all var(--md-motion-dur-quick) var(--md-motion-ease-enter);
+}
+
+.class_bar_btn:hover {
+    transition: all var(--md-motion-dur-quick) var(--md-motion-ease-enter);
+}
+
+.class_bar_btn.active {
+    transition: all var(--md-motion-dur-quick) var(--md-motion-ease-enter);
+}
+
+.category-input {
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    font-size: 16px;
+    padding: 12px 15px;
+}
+
+.file-selection-item:hover {
+    transition: all var(--md-motion-dur-quick) var(--md-motion-ease-enter);
+}
+
+.file-selection-item.active {
+    transition: all var(--md-motion-dur-quick) var(--md-motion-ease-enter);
+}
+
+.file-selection-item .file-type {
+    font-size: 12px;
+}
+
+.file-selection-container {
+    border-radius: 12px;
+}
+
+.file-selection-header, .file-selection-footer {
+    padding: 15px 20px;
+}
+
+.file-selection-btn {
+    padding: 10px 20px;
+    border-radius: 8px;
+    cursor: pointer;
+    border: none;
+    font-weight: 500;
+    transition: all var(--md-motion-dur-quick) var(--md-motion-ease-enter);
+}
+
+.loading-indicator {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+    font-size: 14px;
+}
+
+/* ===== 应用组样式 ===== */
+.file-group-item .group-icon-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 3px;
+    width: var(--icon-size, 64px);
+    height: var(--icon-size, 64px);
+    margin-bottom: 15px;
+    padding: 6px;
+    border-radius: 12px;
+    transition: transform var(--md-motion-dur-enter) var(--md-motion-ease-enter);
+}
+
+/* .file-group-item:hover .group-icon-grid {
+    transform: scale(1.1);
+} */
+
+.file-group-item .group-icon-grid img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    border-radius: 4px;
+}
+
+.file-group-item .group-icon-grid .group-icon-empty {
+    border-radius: 4px;
+}
+
+.file-group-item .group-badge {
+    position: absolute;
+    right: 10px;
+    bottom: 10px;
+    min-width: 20px;
+    height: 20px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 6px;
+}
+
+/* 拖到应用组上：虚线框换成实线描边 + 状态色，落点反馈更"吸附" */
+.drag-over-group {
+    outline: 2px solid rgba(93, 173, 226, 0.95) !important;
+    outline-offset: -2px;
+    background: rgba(93, 173, 226, 0.18) !important;
+    transform: translateY(-2px) scale(1.04) !important;
+    transition: transform var(--md-motion-dur-quick) var(--md-motion-ease-enter),
+                background-color var(--md-motion-dur-quick) var(--md-motion-ease-enter),
+                outline-color var(--md-motion-dur-quick) var(--md-motion-ease-enter) !important;
+}
+
+/* 组视图 overlay */
+.group-view-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 3000;
+    display: none;
+    justify-content: center;
+    align-items: center;
+    backdrop-filter: blur(8px);
+}
+
+.group-view-container {
+    width: 70%;
+    max-width: 700px;
+    max-height: 80%;
+    border-radius: 16px;
+    box-shadow: 0 15px 40px rgba(0, 0, 0, 0.3);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.group-view-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    font-size: 18px;
+    font-weight: bold;
+}
+
+.group-view-body {
+    padding: 20px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.group-view-body::-webkit-scrollbar {
+    display: none;
+}
+
+.group-view-body .files-grid {
+    /* display: grid; */
+    grid-template-columns: repeat(auto-fill, minmax(var(--grid-col-width, 120px), 1fr));
+    gap: 15px;
+    justify-items: center;
+}
+
+/* 组内文件右键菜单中的 "从组中移除" 项 */
+.context-menu-item.group-remove {
+    color: #e67e22;
+}
+
+.context-menu-item.group-remove i {
+    color: #e67e22;
+}
+
+/* 向上抽吸动画关键帧 */
+@keyframes suckUp {
+    0% {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: translateY(-14px) scale(0.985);
+    }
+  }
+
+  /* 对话框弹簧进场：冲过 1.2% 再回位，观感更"物理" */
+  @keyframes springIn {
+    0% {
+      opacity: 0;
+      transform: scale(0.90) translateY(10px);
+    }
+    60% {
+      opacity: 1;
+      transform: scale(1.012) translateY(-2px);
+    }
+    80% {
+      transform: scale(0.997) translateY(0.5px);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
+  }
+
+  /* 菜单：几乎不位移，只做轻微缩放，追求"跟手" */
+  @keyframes quickIn {
+    0% {
+      opacity: 0;
+      transform: scale(0.96) translateY(-4px);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
+  }
+
+  @keyframes quickOut {
+    0% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: scale(0.98);
+    }
+  }
+
+  /* 设置面板：从右侧滑入 */
+  @keyframes panelIn {
+    0% {
+      opacity: 0;
+      transform: translateX(18px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+/* 从下方淡入动画关键帧 */
+@keyframes fadeInUp {
+  0% {
+    opacity: 0;
+    transform: translateY(16px) scale(0.985);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.update-overlay{
+    position: fixed;
+    width: 100%;
+    height: 100%;
+    top: 0px;
+    left: 0px;
+    display: flex;
+    background-color: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(8px);
+}
+.update-container{ 
+    margin: auto;
+    width: 50%;
+    height: 90%;
+    border-radius: 10px;
+    padding: 3%;
+}
+.update-container h4{
+    height: 15%;
+    font-size: large;
+    justify-content: center;
+    align-items: center;
+}
+.infobox{
+    height: 70%;
+    width: auto;
+    overflow-y: scroll;
+}
+.infobox p{
+    white-space: pre-wrap;
+}
+.infobox::-webkit-scrollbar {
+    display: none;
+}
+
+/* ===== 面板内容层进出场 =====
+   窗口位置由 Rust 逐帧滑动（同一条 cubic-bezier 曲线），这一层负责
+   淡入淡出 + 从"呼出位置"那个角轻微缩放；纯 transform/opacity，
+   不会触发重新布局（图标不会重新排列）。--ed-panel-anim 由 Rust 注入。 */
+@keyframes edPanelIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.982) translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes edPanelOut {
+  0% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.992) translateY(6px);
+  }
+}
+
+body.ed-panel-in {
+  animation: edPanelIn var(--ed-panel-anim, 340ms) var(--md-motion-ease-enter) both;
+}
+
+body.ed-panel-out {
+  animation: edPanelOut var(--ed-panel-anim, 240ms) var(--md-motion-ease-exit) both;
+}
+
+/* ===== 文件列表：子项依次升起 =====
+   只用 transform/opacity，在合成器上跑；延迟最多 96ms，保证在容器动画
+   结束前收尾（ed.js 里 fade-in-up 等 200ms 就摘类）。 */
+@keyframes mdItemIn {
+  0% {
+    opacity: 0.35;
+    transform: translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.files-grid.fade-in-up > * {
+  animation: mdItemIn 120ms var(--md-motion-ease-enter) both;
+}
+
+.files-grid.fade-in-up > *:nth-child(1) { animation-delay: 0ms; }
+.files-grid.fade-in-up > *:nth-child(2) { animation-delay: 12ms; }
+.files-grid.fade-in-up > *:nth-child(3) { animation-delay: 24ms; }
+.files-grid.fade-in-up > *:nth-child(4) { animation-delay: 36ms; }
+.files-grid.fade-in-up > *:nth-child(5) { animation-delay: 48ms; }
+.files-grid.fade-in-up > *:nth-child(6) { animation-delay: 60ms; }
+.files-grid.fade-in-up > *:nth-child(7) { animation-delay: 72ms; }
+.files-grid.fade-in-up > *:nth-child(8) { animation-delay: 84ms; }
+.files-grid.fade-in-up > *:nth-child(n + 9) { animation-delay: 96ms; }
+
+/* ===== 面板"远离态" =====
+   面板隐藏期间内容保持在这个状态，这样下次呼出时第一帧就是进场动画的起点，
+   不会先闪一帧"最终态"再跳回去（偶发的唤起跳变就是这么来的）。 */
+body.ed-panel-away {
+  opacity: 0;
+  transform: scale(0.992) translateY(6px);
+}
+
+/* ===== 网格/列表视图互换 =====
+   旧视图淡出缩小 → 换成新视图 → 新视图轻微放大淡入，两个方向一致（有头有尾）。 */
+@keyframes edViewOut {
+  0%   { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.985); }
+}
+
+@keyframes edViewIn {
+  0%   { opacity: 0; transform: scale(1.014); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+#filesContainer.ed-view-out,
+#filesListContainer.ed-view-out {
+  animation: edViewOut 110ms var(--md-motion-ease-exit) both;
+}
+
+#filesContainer.ed-view-in,
+#filesListContainer.ed-view-in {
+  animation: edViewIn 220ms var(--md-motion-ease-enter) both;
+}
+
+/* 列表视图里子项也依次落入 */
+#filesListContainer.ed-view-in > * {
+  animation: mdItemIn 120ms var(--md-motion-ease-enter) both;
+}
+
+/* ===== 分类切换：翻页动效 =====
+   旧内容朝一侧淡出、新内容从另一侧滑入（只动 transform/opacity，合成器合成）。
+   方向由分类在栏里的先后决定，所以"往后翻"和"往回翻"手感不同。
+   用 id 选择器是为了压过容器本身的 .fade-in-up（那一条负责子项阶梯）。 */
+@keyframes edPageOutLeft {
+  0%   { opacity: 1; transform: translateX(0) scale(1); }
+  100% { opacity: 0; transform: translateX(-44px) scale(0.99); }
+}
+
+@keyframes edPageOutRight {
+  0%   { opacity: 1; transform: translateX(0) scale(1); }
+  100% { opacity: 0; transform: translateX(44px) scale(0.99); }
+}
+
+@keyframes edPageInRight {
+  0%   { opacity: 0; transform: translateX(52px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes edPageInLeft {
+  0%   { opacity: 0; transform: translateX(-52px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+
+#filesContainer.ed-page-out-left,
+#filesListContainer.ed-page-out-left {
+  animation: edPageOutLeft 110ms var(--md-motion-ease-exit) both;
+}
+
+#filesContainer.ed-page-out-right,
+#filesListContainer.ed-page-out-right {
+  animation: edPageOutRight 110ms var(--md-motion-ease-exit) both;
+}
+
+#filesContainer.ed-page-in-right,
+#filesListContainer.ed-page-in-right {
+  animation: edPageInRight 190ms var(--md-motion-ease-enter) both;
+}
+
+#filesContainer.ed-page-in-left,
+#filesListContainer.ed-page-in-left {
+  animation: edPageInLeft 190ms var(--md-motion-ease-enter) both;
+}
+
+/* 注：2026-10-02 试过一版"上下翻"（translateY），用户对比后觉得不好看，
+   已改回上面的左右翻，纵向 keyframes 一并删掉，避免留死代码。 */
+
+/* ===== 鼠标交互 =====
+   选择器带上前缀提高优先级：这些元素的样式写在 easyFileDesk.html 的
+   <style> 里，而 frame.css 在前，同优先级会被它压过。 */
+.files-grid .file-item {
+  transition: transform var(--md-motion-dur-exit) var(--md-motion-ease-enter),
+              box-shadow var(--md-motion-dur-exit) var(--md-motion-ease-enter);
+}
+
+/* 悬停：整块轻抬 2px，图标再放大一点，层次更明显 */
+.files-grid .file-item:hover {
+  transform: translateY(-2px);
+}
+
+.files-grid .file-item img {
+  transition: transform var(--md-motion-dur-enter) var(--md-motion-ease-enter);
+}
+
+.files-grid .file-item:hover img {
+  transform: scale(1.06);
+}
+
+/* 分类栏按钮：悬停轻抬，颜色过渡走强调型曲线 */
+#class_bar .class_bar_btn {
+  transition: transform var(--md-motion-dur-quick) var(--md-motion-ease-enter),
+              background-color var(--md-motion-dur-enter) var(--md-motion-ease-enter),
+              color var(--md-motion-dur-enter) var(--md-motion-ease-enter);
+}
+
+#class_bar .class_bar_btn:hover {
+  transform: translateY(-1px);
+}
+
+/* 搜索框聚焦：柔和的强调色光晕 */
+.search_box .search_input {
+  transition: box-shadow var(--md-motion-dur-enter) var(--md-motion-ease-enter),
+              border-color var(--md-motion-dur-enter) var(--md-motion-ease-enter);
+}
+
+.search_box .search_input:focus {
+  box-shadow: 0 0 0 3px rgba(93, 173, 226, 0.25);
+}
+
+/* 设置面板展开时，各分区依次落入 */
+.theme-settings-panel.panel-in > * {
+  animation: mdItemIn 160ms var(--md-motion-ease-enter) both;
+}
+
+.theme-settings-panel.panel-in > *:nth-child(1) { animation-delay: 0ms; }
+.theme-settings-panel.panel-in > *:nth-child(2) { animation-delay: 30ms; }
+.theme-settings-panel.panel-in > *:nth-child(3) { animation-delay: 60ms; }
+.theme-settings-panel.panel-in > *:nth-child(4) { animation-delay: 90ms; }
+.theme-settings-panel.panel-in > *:nth-child(n + 5) { animation-delay: 120ms; }
+
+/* ===== 多选 + 自绘拖拽 =====
+   拖拽不再用 HTML5 原生 DnD（见 ed.js 末尾的 DragManager），下面这些类都是它加的。
+   时长与曲线一律走上面的 MD3 token：进场减速、退场加速、选中用弹簧。 */
+
+/* 选中态（Ctrl 点击 / Shift 框选都打这个类）：强调色描边 + 一层状态色，勾上的瞬间轻弹一下 */
+.file-item.ed-selected,
+.file-list-item.ed-selected {
+  outline: 2px solid rgba(93, 173, 226, 0.95);
+  outline-offset: -2px;
+  background: rgba(93, 173, 226, 0.16);
+  opacity: 1;
+  animation: edSelectPop var(--md-motion-dur-quick) var(--md-motion-ease-spring);
+}
+
+@keyframes edSelectPop {
+  from { transform: scale(0.955); }
+  to   { transform: scale(1); }
+}
+
+/* 被拖走的图标：整组一起摘出布局，原位当场被别人填满、不留洞（手机桌面式） */
+.ed-drag-taken {
+  display: none !important;
+}
+
+/* 拖拽期间唯一的那个虚槽：代表整组，跟落点走；松手才展开成 N 格 */
+.ed-drag-slot {
+  border-radius: 15px;
+  border: 2px dashed rgba(93, 173, 226, 0.55);
+  background: rgba(93, 173, 226, 0.09);
+  animation: edSlotIn var(--md-motion-dur-quick) var(--md-motion-ease-enter);
+}
+
+@keyframes edSlotIn {
+  from { opacity: 0; transform: scale(0.94); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* 跟着指针走的那份克隆体 */
+.ed-drag-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 9999;
+  pointer-events: none;   /* 必须穿透，否则会挡住 elementFromPoint 的命中测试 */
+  will-change: transform;
+  filter: drop-shadow(0 12px 24px rgba(0, 0, 0, 0.34));
+}
+
+.ed-ghost-main,
+.ed-ghost-copy {
+  position: absolute;
+  inset: 0;
+}
+
+/* 每件图标的错位位移与层级由 JS 按 DOM 顺序逐个写在 inline style 上，
+   这里只管视觉：主图标（按住的那个）压在最上层保持不透明，其余半透明，
+   这样叠出来的是一摞「真实被选中的图标」，而不是同一张图标的重影。 */
+.ed-ghost-copy {
+  opacity: 0.7;
+}
+
+.ed-ghost-badge {
+  position: absolute;
+  top: -9px;
+  right: -9px;
+  z-index: 3;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 11px;
+  background: #3498db;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 22px;
+  text-align: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+/* 拖拽期间全局禁选中 + 抓手光标 */
+body.ed-dragging,
+body.ed-dragging * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  cursor: grabbing !important;
+}
+
+/* Shift + 拖动框选的橡皮筋矩形：盖在图标上层，但必须穿透，
+   否则鼠标事件会被它自己接走，矩形就再也长不动了 */
+.ed-marquee {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 9998;
+  pointer-events: none;
+  border: 1px solid rgba(93, 173, 226, 0.9);
+  background: rgba(93, 173, 226, 0.16);
+  border-radius: 4px;
+}
+
+/* 框选期间同样禁选中，光标换成十字准星 */
+body.ed-marqueeing,
+body.ed-marqueeing * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  cursor: crosshair !important;
+}

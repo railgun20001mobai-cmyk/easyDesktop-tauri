@@ -1,0 +1,665 @@
+/* 引入基础框架样式 */
+@import url('frame.css');
+
+:root {
+    /* 默认主题 (dark) */
+    --font-family: 'df';
+    --bg-gradient: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    --body-bg-size: auto;
+    --text-color: #e0e0e0;
+    --selection-bg: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    --time-display-color: #e0e0e0;
+    --time-display-icon-color: #667eea;
+    --files-list-bg: rgba(40, 40, 60, 0.7);
+    --file-list-item-border: rgba(255, 255, 255, 0.05);
+    --file-list-item-hover: rgba(255, 255, 255, 0.05);
+    --file-list-name-color: #e0e0e0;
+    --file-list-type-color: #8a9ba8;
+    --file-list-icon-filter: brightness(0.8);
+    --file-item-color: #e0e0e0;
+    --file-item-hover-bg: rgba(40, 40, 60, 0.8);
+    --file-item-hover-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+    --file-item-hover-border: rgba(255, 255, 255, 0.1);
+    --file-name-color: #e0e0e0;
+    --file-name-shadow: none;
+    --file-type-color: #8a9ba8;
+    --info-bar-bg: rgba(40, 40, 60, 0.7);
+    --info-bar-color: #b0b0b0;
+    --info-bar-border: 1px solid rgba(255, 255, 255, 0.1);
+    --path-btn-color: #8a9ba8;
+    --path-btn-hover-bg: rgba(255, 255, 255, 0.1);
+    --path-btn-hover-color: #667eea;
+    --breadcrumb-bg: rgba(40, 40, 60, 0.7);
+    --breadcrumb-color: #e0e0e0;
+    --breadcrumb-border: 1px solid rgba(255, 255, 255, 0.1);
+    --breadcrumb-item-color: #667eea;
+    --breadcrumb-item-hover: rgba(102, 126, 234, 0.1);
+    --view-btn-color: #7f8c8d;
+    --view-btn-hover-bg: rgba(0, 0, 0, 0.05);
+    --view-btn-hover-color: #667eea;
+    --view-btn-active-bg: rgba(52, 152, 219, 0.1);
+    --context-menu-bg: #1E2022;
+    --context-menu-item-icon: #667eea;
+    --context-menu-item-hover: #34373b;
+    --rename-overlay-bg: rgba(0, 0, 0, 0.5);
+    --rename-container-bg: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    --rename-title-color: #bfc7d1;
+    --rename-input-bg: #e1e4e6;
+    --rename-input-color: #333;
+    --rename-btn-confirm-bg: #667eea;
+    --rename-btn-cancel-bg: #f0f0f0;
+    --delete-container-bg: #34373b;
+    --delete-title-color: #e74c3c;
+    --delete-text-color: #ffffff;
+    --group-delete-icon-bg: rgba(231, 76, 60, 0.16);
+    --group-delete-icon-color: #ff8e84;
+    --group-delete-note-bg: rgba(255, 255, 255, 0.05);
+    --group-delete-note-border: 1px solid rgba(255, 255, 255, 0.08);
+    --group-delete-note-color: #cfd6de;
+    --search-box-bg: rgba(40, 40, 60, 0.7);
+    --search-box-border: 1px solid rgba(255, 255, 255, 0.1);
+    --search-input-color: #e0e0e0;
+    --settings-btn-bg: rgba(40, 40, 60, 0.7);
+    --settings-btn-color: #e0e0e0;
+    --settings-panel-bg: rgb(30, 30, 40);
+    --settings-panel-border: 1px solid rgba(255, 255, 255, 0.1);
+    --settings-header-color: #e0e0e0;
+    --theme-card-bg: rgba(50, 50, 70, 0.5);
+    --theme-card-active-border: #667eea;
+    --class-btn-color: #a9a9a9;
+    --class-btn-active-color: #667eea;
+    --group-badge-bg: #667eea;
+    --group-badge-color: white;
+    --group-container-bg: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    --dir-btn-active-bg: #667eea;
+}
+
+[data-theme="light"] {
+    --font-family: 'df';
+    --bg-gradient: linear-gradient(135deg, #f5f7fa 0%, #e4edf5 100%);
+    --body-bg-size: auto;
+    --text-color: #333;
+    --selection-bg: #fff;
+    --time-display-color: #2c3e50;
+    --time-display-icon-color: #3498db;
+    --files-list-bg: rgba(255, 255, 255, 0.7);
+    --file-list-item-border: rgba(0, 0, 0, 0.05);
+    --file-list-item-hover: rgba(0, 0, 0, 0.03);
+    --file-list-name-color: #2c3e50;
+    --file-list-type-color: #7f8c8d;
+    --file-list-icon-filter: none;
+    --file-item-color: inherit;
+    --file-item-hover-bg: rgba(255, 255, 255, 0.85);
+    --file-item-hover-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+    --file-item-hover-border: rgba(0, 0, 0, 0.05);
+    --file-name-color: #2c3e50;
+    --file-name-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    --file-type-color: #7f8c8d;
+    --info-bar-bg: rgba(255, 255, 255, 0.7);
+    --info-bar-color: #34495e;
+    --info-bar-border: none;
+    --path-btn-color: #7f8c8d;
+    --path-btn-hover-bg: rgba(0, 0, 0, 0.05);
+    --path-btn-hover-color: #3498db;
+    --breadcrumb-bg: rgba(255, 255, 255, 0.7);
+    --breadcrumb-color: #2c3e50;
+    --breadcrumb-border: none;
+    --breadcrumb-item-color: #3498db;
+    --breadcrumb-item-hover: rgba(52, 152, 219, 0.1);
+    --view-btn-color: #7f8c8d;
+    --view-btn-hover-bg: rgba(0, 0, 0, 0.05);
+    --view-btn-hover-color: #3498db;
+    --view-btn-active-bg: rgba(52, 152, 219, 0.1);
+    --context-menu-bg: white;
+    --context-menu-item-icon: #3498db;
+    --context-menu-item-hover: #f0f7ff;
+    --rename-overlay-bg: rgba(0, 0, 0, 0.5);
+    --rename-container-bg: white;
+    --rename-title-color: #2c3e50;
+    --rename-input-bg: #fff;
+    --rename-input-color: #333;
+    --rename-btn-confirm-bg: #3498db;
+    --rename-btn-cancel-bg: #f0f0f0;
+    --delete-container-bg: white;
+    --delete-title-color: #e74c3c;
+    --delete-text-color: #555;
+    --group-delete-icon-bg: #fff1ef;
+    --group-delete-icon-color: #e74c3c;
+    --group-delete-note-bg: #f7f9fc;
+    --group-delete-note-border: 1px solid #e6ebf2;
+    --group-delete-note-color: #58677a;
+    --search-box-bg: #ffffffb3;
+    --search-box-border: none;
+    --search-input-color: #333;
+    --settings-btn-bg: rgba(255, 255, 255, 0.7);
+    --settings-btn-color: #333;
+    --settings-panel-bg: rgb(255, 255, 255);
+    --settings-panel-border: 1px solid rgba(0, 0, 0, 0.1);
+    --settings-header-color: #333;
+    --theme-card-bg: rgba(255, 255, 255, 0.7);
+    --theme-card-active-border: #5dade2;
+    --class-btn-color: #a9a9a9;
+    --class-btn-active-color: #3498db;
+    --group-badge-bg: #3498db;
+    --group-badge-color: white;
+    --group-container-bg: white;
+    --dir-btn-active-bg: #5dade2;
+}
+
+[data-theme="zzz"] {
+    --font-family: 'zzz';
+    --bg-gradient: url('/theme/zzz_bg.png');
+    --body-bg-size: cover;
+    --text-color: #fff;
+    --selection-bg: url('/theme/zzz_bg.png');
+    --time-display-color: white;
+    --time-display-icon-color: white;
+    --files-list-bg: rgba(52, 55, 59, 0.7);
+    --file-list-item-border: rgba(255, 255, 255, 0.05);
+    --file-list-item-hover: rgba(255, 255, 255, 0.03);
+    --file-list-name-color: #e0e0e0;
+    --file-list-type-color: #b0b0b0;
+    --file-list-icon-filter: none;
+    --file-item-color: #e0e0e0;
+    --file-item-hover-bg: rgba(52, 55, 59, 0.8);
+    --file-item-hover-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+    --file-item-hover-border: 1px solid rgba(255, 255, 255, 0.1);
+    --file-name-color: #e0e0e0;
+    --file-name-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+    --file-type-color: #b0b0b0;
+    --info-bar-bg: rgba(50, 50, 70, 0.5);
+    --info-bar-color: #e0e0e0;
+    --info-bar-border: none;
+    --path-btn-color: #b0b0b0;
+    --path-btn-hover-bg: rgba(255, 255, 255, 0.05);
+    --path-btn-hover-color: white;
+    --breadcrumb-bg: transparent;
+    --breadcrumb-color: #e0e0e0;
+    --breadcrumb-border: 1px solid rgba(255, 255, 255, 0.1);
+    --breadcrumb-item-color: #9b9b9b;
+    --breadcrumb-item-hover: rgba(194, 194, 194, 0.1);
+    --view-btn-color: #b0b0b0;
+    --view-btn-hover-bg: rgba(255, 255, 255, 0.05);
+    --view-btn-hover-color: white;
+    --view-btn-active-bg: rgba(163, 199, 241, 0.1);
+    --context-menu-bg: black;
+    --context-menu-item-icon: #FFFFFF;
+    --context-menu-item-hover: #34373b;
+    --rename-overlay-bg: rgba(0, 0, 0, 0.7);
+    --rename-container-bg: url('/theme/zzz_bg.png');
+    --rename-title-color: #F0F5F9;
+    --rename-input-bg: #333;
+    --rename-input-color: #F0F5F9;
+    --rename-btn-confirm-bg: white;
+    --rename-btn-cancel-bg: rgba(255, 255, 255, 0.1);
+    --delete-container-bg: rgba(30, 30, 50, 0.95);
+    --delete-title-color: #e74c3c;
+    --delete-text-color: #ccc;
+    --group-delete-icon-bg: rgba(231, 76, 60, 0.18);
+    --group-delete-icon-color: #ffb0a8;
+    --group-delete-note-bg: rgba(255, 255, 255, 0.06);
+    --group-delete-note-border: 1px solid rgba(255, 255, 255, 0.1);
+    --group-delete-note-color: #d6dde5;
+    --search-box-bg: transparent;
+    --search-box-border: 1px solid rgba(255, 255, 255, 0.1);
+    --search-input-color: #e0e0e0;
+    --settings-btn-bg: rgba(50, 50, 70, 0.5);
+    --settings-btn-color: #e0e0e0;
+    --settings-panel-bg: url('/theme/zzz_bg.png');
+    --settings-panel-border: 1px solid rgba(255, 255, 255, 0.1);
+    --settings-header-color: #e0e0e0;
+    --theme-card-bg: rgba(50, 50, 70, 0.5);
+    --theme-card-active-border: white;
+    --class-btn-color: #a9a9a9;
+    --class-btn-active-color: white;
+    --group-badge-bg: rgba(255, 255, 255, 0.8);
+    --group-badge-color: #1a1a2e;
+    --group-container-bg: url('/theme/zzz_bg.png');
+    --dir-btn-active-bg: white;
+}
+
+[data-theme="custom"] {
+    /* 基础映射变量，由用户自定义 */
+    --custom-primary: #667eea;
+    --custom-secondary: rgba(40, 40, 60, 0.7);
+    --custom-bg: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    --custom-text-main: #e0e0e0;
+    --custom-text-sub: #8a9ba8;
+
+    --font-family: 'df';
+    --bg-gradient: var(--custom-bg);
+    --body-bg-size: cover;
+    --text-color: var(--custom-text-main);
+    --selection-bg: var(--custom-bg);
+    --time-display-color: var(--custom-text-main);
+    --time-display-icon-color: var(--custom-primary);
+    --files-list-bg: var(--custom-secondary);
+    --file-list-item-border: rgba(255, 255, 255, 0.05);
+    --file-list-item-hover: rgba(255, 255, 255, 0.05);
+    --file-list-name-color: var(--custom-text-main);
+    --file-list-type-color: var(--custom-text-sub);
+    --file-list-icon-filter: brightness(0.8);
+    --file-item-color: var(--custom-text-main);
+    --file-item-hover-bg: var(--custom-secondary);
+    --file-item-hover-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+    --file-item-hover-border: rgba(255, 255, 255, 0.1);
+    --file-name-color: var(--custom-text-main);
+    --file-name-shadow: none;
+    --file-type-color: var(--custom-text-sub);
+    --info-bar-bg: var(--custom-secondary);
+    --info-bar-color: var(--custom-text-sub);
+    --info-bar-border: 1px solid rgba(255, 255, 255, 0.1);
+    --path-btn-color: var(--custom-text-sub);
+    --path-btn-hover-bg: rgba(255, 255, 255, 0.1);
+    --path-btn-hover-color: var(--custom-primary);
+    --breadcrumb-bg: var(--custom-secondary);
+    --breadcrumb-color: var(--custom-text-main);
+    --breadcrumb-border: 1px solid rgba(255, 255, 255, 0.1);
+    --breadcrumb-item-color: var(--custom-primary);
+    --breadcrumb-item-hover: rgba(102, 126, 234, 0.1);
+    --view-btn-color: var(--custom-text-sub);
+    --view-btn-hover-bg: rgba(255, 255, 255, 0.05);
+    --view-btn-hover-color: var(--custom-primary);
+    --view-btn-active-bg: rgba(52, 152, 219, 0.1);
+    --context-menu-bg: var(--custom-secondary);
+    --context-menu-item-icon: var(--custom-primary);
+    --context-menu-item-hover: rgba(255, 255, 255, 0.1);
+    --rename-overlay-bg: rgba(0, 0, 0, 0.5);
+    --rename-container-bg: var(--custom-bg);
+    --rename-title-color: var(--custom-text-main);
+    --rename-input-bg: var(--custom-secondary);
+    --rename-input-color: var(--custom-text-main);
+    --rename-btn-confirm-bg: var(--custom-primary);
+    --rename-btn-cancel-bg: var(--custom-text-sub);
+    --delete-container-bg: var(--custom-secondary);
+    --delete-title-color: #e74c3c;
+    --delete-text-color: var(--custom-text-main);
+    --group-delete-icon-bg: rgba(231, 76, 60, 0.16);
+    --group-delete-icon-color: #ff8e84;
+    --group-delete-note-bg: rgba(255, 255, 255, 0.05);
+    --group-delete-note-border: 1px solid rgba(255, 255, 255, 0.08);
+    --group-delete-note-color: var(--custom-text-sub);
+    --search-box-bg: var(--custom-secondary);
+    --search-box-border: 1px solid rgba(255, 255, 255, 0.1);
+    --search-input-color: var(--custom-text-main);
+    --settings-btn-bg: var(--custom-secondary);
+    --settings-btn-color: var(--custom-text-main);
+    --settings-panel-bg: var(--custom-secondary);
+    --settings-panel-border: 1px solid rgba(255, 255, 255, 0.1);
+    --settings-header-color: var(--custom-text-main);
+    --theme-card-bg: var(--custom-secondary);
+    --theme-card-active-border: var(--custom-primary);
+    --class-btn-color: var(--custom-text-sub);
+    --class-btn-active-color: var(--custom-primary);
+    --group-badge-bg: var(--custom-primary);
+    --group-badge-color: white;
+    --group-container-bg: var(--custom-bg);
+    --dir-btn-active-bg: var(--custom-primary);
+}
+
+/* 应用变量到样式 */
+
+* {
+    font-family: var(--font-family);
+}
+
+body {
+    background: var(--bg-gradient) no-repeat center center fixed;
+    background-size: var(--body-bg-size);
+    color: var(--text-color);
+}
+
+.file-selection-container {
+    background: var(--selection-bg);
+    background-size: cover;
+}
+
+.time-display {
+    color: var(--time-display-color);
+}
+
+.time-display i {
+    color: var(--time-display-icon-color);
+}
+
+.files-list {
+    background: var(--files-list-bg);
+    border: var(--search-box-border);
+}
+
+.file-list-icon {
+    filter: var(--file-list-icon-filter, none);
+}
+
+.file-list-item {
+    border-bottom: 1px solid var(--file-list-item-border);
+    color: var(--text-color);
+}
+
+.file-list-item:hover {
+    background: var(--file-list-item-hover);
+}
+
+.file-list-name {
+    color: var(--file-list-name-color);
+}
+
+.file-list-type {
+    color: var(--file-list-type-color);
+}
+
+.file-item {
+    color: var(--file-item-color);
+}
+
+.file-item:hover, .file-item_hover {
+    background: var(--file-item-hover-bg);
+    box-shadow: var(--file-item-hover-shadow);
+    border: 1px solid var(--file-item-hover-border);
+}
+
+.file-name {
+    color: var(--file-name-color);
+    text-shadow: var(--file-name-shadow);
+}
+
+.file-type {
+    color: var(--file-type-color);
+}
+
+.info-bar {
+    background: var(--info-bar-bg);
+    color: var(--info-bar-color);
+    border: var(--info-bar-border);
+}
+
+.path-btn {
+    color: var(--path-btn-color);
+}
+
+.path-btn:hover {
+    background: var(--path-btn-hover-bg);
+    color: var(--path-btn-hover-color);
+}
+
+.breadcrumb {
+    background: var(--breadcrumb-bg);
+    color: var(--breadcrumb-color);
+    border: var(--breadcrumb-border);
+}
+
+.breadcrumb-item {
+    color: var(--breadcrumb-item-color);
+}
+
+.breadcrumb-item:hover {
+    background: var(--breadcrumb-item-hover);
+}
+
+.view-btn {
+    color: var(--view-btn-color);
+}
+
+.view-btn:hover {
+    background: var(--view-btn-hover-bg);
+    color: var(--view-btn-hover-color);
+}
+
+.context-menu {
+    background: var(--context-menu-bg);
+}
+
+.context-menu-item i {
+    color: var(--context-menu-item-icon);
+}
+
+.context-menu-item:hover {
+    background: var(--context-menu-item-hover);
+}
+
+.rename-overlay {
+    background: var(--rename-overlay-bg);
+}
+
+.rename-container {
+    background: var(--rename-container-bg);
+    background-size: cover;
+}
+
+.rename-container h3 {
+    color: var(--rename-title-color);
+}
+
+.rename-input {
+    background-color: var(--rename-input-bg);
+    color: var(--rename-input-color);
+}
+
+.rename-input:focus {
+    border-color: var(--view-btn-hover-color);
+    box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
+}
+
+.rename-btn.confirm {
+    background: var(--rename-btn-confirm-bg);
+    color: white;
+}
+
+[data-theme="dark"] .rename-btn.confirm, [data-theme="light"] .rename-btn.confirm, [data-theme="custom"] .rename-btn.confirm {
+    color: white;
+}
+
+.rename-btn.confirm:hover {
+    filter: brightness(0.9);
+}
+
+.rename-btn.cancel {
+    background: var(--rename-btn-cancel-bg);
+    color: var(--text-color);
+}
+
+[data-theme="zzz"] .rename-btn.cancel {
+    color: #e0e0e0;
+}
+
+.delete-confirm {
+    background: var(--rename-overlay-bg);
+}
+
+.delete-container {
+    background: var(--delete-container-bg);
+}
+
+.delete-container h3 {
+    color: var(--delete-title-color);
+}
+
+.delete-container p {
+    color: var(--delete-text-color);
+}
+
+.group-delete-icon {
+    background: var(--group-delete-icon-bg);
+    color: var(--group-delete-icon-color);
+}
+
+.group-delete-note {
+    background: var(--group-delete-note-bg);
+    border: var(--group-delete-note-border);
+    color: var(--group-delete-note-color);
+}
+
+.search_box{
+    background: var(--search-box-bg);
+    border: var(--search-box-border);
+}
+
+.search_box input{
+    color: var(--search-input-color);
+}
+
+.search_box input::placeholder {
+    color: #8a9ba8;
+}
+
+.settings-btn {
+    color: var(--view-btn-color);
+    background: rgba(0, 0, 0, 0);
+}
+
+ .settings-btn:hover {
+    background: var(--view-btn-hover-bg);
+    color: var(--view-btn-hover-color);
+}
+
+.theme-settings-panel {
+    background: var(--settings-panel-bg);
+    background-size: cover;
+    border: var(--settings-panel-border);
+}
+
+.settings-header h3 {
+    color: var(--settings-header-color);
+}
+
+.close-btn {
+    color: var(--path-btn-color);
+}
+
+.settings-section h4 {
+    color: var(--settings-header-color);
+}
+
+.system-theme-toggle {
+    color: var(--settings-header-color);
+}
+
+.slider {
+    background-color: #4a4a4a;
+}
+
+[data-theme="light"] .slider {
+    background-color: #ccc;
+}
+
+[data-theme="zzz"] .slider {
+    background-color: rgba(255, 255, 255, 0.2);
+}
+
+input:checked + .slider {
+    background-color: var(--breadcrumb-item-color);
+}
+
+[data-theme="zzz"] input:checked + .slider {
+    background-color: rgb(172, 172, 172);
+}
+
+.theme-card {
+    background: var(--theme-card-bg);
+    border: 1px solid transparent;
+}
+
+[data-theme="light"] .theme-card {
+    border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="zzz"] .theme-card {
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.theme-card:hover {
+    filter: brightness(1.1);
+}
+
+.theme-card.active {
+    border-color: var(--theme-card-active-border);
+    box-shadow: 0 0 0 2px rgba(93, 173, 226, 0.3);
+}
+
+.theme-card span {
+    color: var(--settings-header-color);
+}
+
+.class_bar_btn {
+    color: var(--class-btn-color);
+}
+
+.class_bar_btn:hover {
+    background: var(--path-btn-hover-bg);
+    color: var(--text-color);
+}
+
+.class_bar_btn.active {
+    color: var(--class-btn-active-color);
+}
+
+.category-input {
+    background-color: var(--rename-input-bg);
+    color: var(--rename-input-color);
+    border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="zzz"] .category-input {
+    background-color: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.file-selection-item:hover {
+    background-color: var(--path-btn-hover-bg);
+}
+
+.file-selection-item.active {
+    background-color: var(--view-btn-active-bg);
+}
+
+/* 应用组 */
+.file-group-item .group-icon-grid {
+    background: var(--theme-card-bg);
+}
+
+.file-group-item .group-icon-grid .group-icon-empty {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.file-group-item .group-badge {
+    background: var(--group-badge-bg);
+    color: var(--group-badge-color);
+}
+
+.group-view-container {
+    background: var(--group-container-bg);
+    background-size: cover;
+    border: var(--settings-panel-border);
+}
+
+.group-view-header {
+    color: var(--settings-header-color);
+    border-bottom: 1px solid var(--file-list-item-border);
+}
+
+.update-container{ 
+    background-color: var(--delete-container-bg);
+}
+.update-container h4{
+    color: var(--text-color);
+}
+.infobox{
+    color: var(--rename-title-color);
+}
+
+.dir_btn_active {
+    background-color: var(--dir-btn-active-bg);
+    color: var(--text-color);
+    box-shadow: 0 0 5px rgba(93, 173, 226, 0.5);
+}
+.setting_note {
+    font-size: 10px;
+    color: var(--file-type-color);
+}
+[data-theme="light"] .dir_btn_active {
+    color: white;
+}
+
+[data-theme="zzz"] .dir_btn_active {
+    color: #2c3e50;
+}

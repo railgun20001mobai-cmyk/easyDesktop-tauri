@@ -1,0 +1,17 @@
+# 构建产物与本机数据，全部不进仓库
+/target
+/gen
+/release
+/_bak
+
+# 构建日志（里面有本机绝对路径）
+*.log
+build.log
+bundle*.log
+
+# 编辑器 / 系统
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/

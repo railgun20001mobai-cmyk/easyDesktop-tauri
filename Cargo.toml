@@ -1,0 +1,46 @@
+[package]
+name = "easydesktop"
+version = "2.9.0"
+description = "EasyDesktop - 桌面增强工具（Rust/Tauri 重构版）"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# tray-icon：托盘图标（让用户知道程序在跑）；image-ico：解码 icons/icon.ico 给托盘用
+tauri = { version = "2", features = ["protocol-asset", "tray-icon", "image-ico"] }
+serde = { version = "1", features = ["derive"] }
+# preserve_order：serde_json::Map 默认按字典序排序，会把分类/组的顺序打乱
+serde_json = { version = "1", features = ["preserve_order"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp", "ico"] }
+pinyin = "0.11.0"
+base64 = "0.23.1"
+tauri-plugin-autostart = "2.5.1"
+tauri-plugin-global-shortcut = "2.3.2"
+tauri-plugin-dialog = "2"
+
+# Windows 原生 API（精选 feature，避免拉入整个 windows 元数据）
+[dependencies.windows]
+version = "0.61"
+features = [
+    "Win32_Foundation",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_HiDpi",
+    "Win32_Media",
+    "Win32_System_Com",
+    "Win32_System_Threading",
+    "Win32_Security",
+    "Win32_Graphics_Gdi",
+    "Win32_Graphics_Dwm",
+    "Win32_Storage_FileSystem",
+]
+
+[profile.release]
+opt-level = "z"        # 优先体积（安装包大小不是瓶颈，但小一点启动更快）
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

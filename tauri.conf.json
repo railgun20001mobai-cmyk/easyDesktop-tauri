@@ -1,0 +1,44 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "easyDesktop",
+  "version": "2.9.0",
+  "identifier": "com.codevicent.easydesktop",
+  "build": {
+    "frontendDist": "frontend"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "EasyDesktop_Main",
+        "url": "easyFileDesk.html",
+        "width": 1664,
+        "height": 640,
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "resizable": false,
+        "visible": false,
+        "shadow": false,
+        "skipTaskbar": true,
+        "dragDropEnabled": false,
+        "windowEffects": {
+          "effects": ["acrylic"],
+          "state": "active"
+        }
+      }
+    ],
+    "security": {
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$APPDATA/**", "$RESOURCE/**", "$HOME/**", "**"]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": ["icons/icon.ico"]
+  }
+}
