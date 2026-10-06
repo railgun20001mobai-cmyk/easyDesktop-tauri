@@ -47,7 +47,7 @@ fn dir_writable(dir: &std::path::Path) -> bool {
 fn default_config() -> Value {
     let (w, h) = crate::win32::screen_size();
     json!({
-        "version": "1.0.0",
+        "version": "1.0.1",
         "theme": "light",
         "language": "zh-CN",
         "themeChangeType": "1",
@@ -125,7 +125,7 @@ pub fn init() {
                 obj.insert(k.clone(), v.clone());
             }
         }
-        obj.insert("version".into(), json!("1.0.0"));
+        obj.insert("version".into(), json!("1.0.1"));
     }
     let _ = CONFIG.set(Mutex::new(cfg));
 }

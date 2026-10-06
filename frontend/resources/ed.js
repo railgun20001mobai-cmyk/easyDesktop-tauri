@@ -247,6 +247,9 @@ const AppState = {
     timer: null,
     db_click_action: false,
     in_edit: false,
+    /* 当前真正生效的搜索关键词。多处代码只把输入框清空、不重新渲染，
+       于是出现"框里没字、列表还是上次搜索结果"；用这个字段判断视图是否需要同步。 */
+    searchKey: '',
 
     reset() {
         this.files_data = [];
@@ -826,6 +829,7 @@ class FileRenderer {
             if (e.ctrlKey || e.metaKey) { ItemSelection.toggle(element); return; }
             if (ItemSelection.size) ItemSelection.clear();
             DOMCache.get("search_input").value = "";
+            syncSearchView();
             AppState.timer = setTimeout(async () => {
                 if (AppState.db_click_action) {
                     AppState.db_click_action = false;
@@ -885,6 +889,7 @@ class FileRenderer {
             if (e.ctrlKey || e.metaKey) { ItemSelection.toggle(element); return; }
             if (ItemSelection.size) ItemSelection.clear();
             DOMCache.get("search_input").value = "";
+            syncSearchView();
             AppState.timer = setTimeout(() => {
                 if (AppState.db_click_action) {
                     AppState.db_click_action = false;
@@ -1045,6 +1050,8 @@ const NavigationManager = {
             // 内容没变就完全不动 DOM（后端 same 恒为 false，前端自己比签名）：
             // 否则每次唤起都全量重渲染+转圈，观感上就是"内容又闪一遍"
             if(JSON.stringify(result.data) === JSON.stringify(AppState.files_data)){
+                // 但上面刚把搜索框清空过，视图还停在旧的搜索结果上 —— 这条快路径不能吞掉这次同步
+                await syncSearchView();
                 loadingUI.sets("items_ctn",false)
                 resolve(true)
                 return
@@ -1056,6 +1063,9 @@ const NavigationManager = {
             // 不再需要「先渲染全部 → 再隐藏不匹配项 → 揭开遮盖」这套会带来闪屏的时序
             const allowIds = await getClassIdSet(last_group);
             await fileRenderer.render(result.data,null,ani,allowIds);
+            // 全量渲染不带搜索过滤，生效键随之清零；框里若还留着关键词就立刻补回过滤
+            AppState.searchKey = "";
+            await syncSearchView();
             resolve(true);
         });
     },
@@ -1117,6 +1127,7 @@ const SearchManager = {
             // 【修复】清空搜索框后回到当前选中的分类视图，而不是回到「全部」。
             // 注：有关键词时仍是全范围搜索（不受分类限制），这里只恢复「无输入」时的底图。
             if(render==true){
+                AppState.searchKey = "";
                 await fileRenderer.render(AppState.files_data,null,false,await getClassIdSet(last_group));
             }
             return;
@@ -1185,10 +1196,22 @@ const SearchManager = {
             } catch (e) { /* 忽略 */ }
         }
 
-        if(render==true)await fileRenderer.render(outData,null,false);
+        if(render==true){
+            AppState.searchKey = key;
+            await fileRenderer.render(outData,null,false);
+        }
         return outData;
     }
 };
+
+/* 输入框内容与真正生效的过滤不一致时，把视图拉回一致。
+   点图标、点面包屑、唤起时的 kws_clear 都只清 value 不重渲染，
+   表现就是「搜完打开程序，再唤起时框里没字、列表却还是上次搜的结果」。 */
+async function syncSearchView(){
+    const box = DOMCache.get("search_input");
+    if(!box || box.value === AppState.searchKey) return;
+    await SearchManager.performSearch();
+}
 
 // ========== 主题管理器 ==========
 const ThemeManager = {
@@ -2465,6 +2488,7 @@ const EventManager = {
                 const path = e.target.dataset.path;
                 NavigationManager.navigateTo(path);
                 DOMCache.get("search_input").value = "";
+                syncSearchView();
             }
         });
     },

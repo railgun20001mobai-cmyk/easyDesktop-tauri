@@ -3,6 +3,7 @@
 /gen
 /release
 /_bak
+/_proto
 
 # 构建日志（里面有本机绝对路径）
 *.log
