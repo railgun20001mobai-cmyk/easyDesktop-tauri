@@ -3648,8 +3648,7 @@ function classFlipDir(prev, next){
 /* 【动效】分类切换做成"手机桌面翻页"：旧内容朝一侧退场 → 过滤生效 → 新内容从另一侧入场。
    全程只动 transform/opacity（合成器合成），不复制 DOM、不触发重排；
    两段 110ms + 190ms，沿用 M3 的"退场快、进场稍慢"节奏。
-   （2026-10-02 试过一版"上下翻"，用户觉得不好看，已改回左右翻；纵向的 keyframes 也从
-   frame.css 里删掉了，想再试的话照着这套类名补一组 translateY 的即可。）
+   纵向翻的一版已废弃，keyframes 也从 frame.css 删除，要再试就照这套类名补一组 translateY 的。
    flipSeq 防连点：新的一次切换开始后，旧的那次在 await 点直接让位。 */
 const PAGE_FLIP_CLASSES = ['ed-page-out-left', 'ed-page-out-right', 'ed-page-in-left', 'ed-page-in-right'];
 let flipSeq = 0;
@@ -4263,7 +4262,7 @@ const DragManager = {
             });
             if(!reduceMotion()){
                 /* 落位那一闪也只给视口内的图标做：框选几十个再松手时，
-                   全量 animate 正好卡在你说的「左键放掉的瞬间」 */
+                   全量 animate 会让松手的那一帧明显卡一下 */
                 const band = visibleBand(scrollerOf(list));
                 for(const n of nodes){
                     if(!inBand(band, n)) continue;

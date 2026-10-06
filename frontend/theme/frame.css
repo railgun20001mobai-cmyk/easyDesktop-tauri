@@ -1354,8 +1354,8 @@ body.ed-panel-away {
   animation: edPageInLeft 190ms var(--md-motion-ease-enter) both;
 }
 
-/* 注：2026-10-02 试过一版"上下翻"（translateY），用户对比后觉得不好看，
-   已改回上面的左右翻，纵向 keyframes 一并删掉，避免留死代码。 */
+/* 分类翻页固定为左右方向；纵向（translateY）的一版已废弃，
+   keyframes 一并删掉不留死代码，要再试就照上面这组类名补一组 translateY 的。 */
 
 /* ===== 鼠标交互 =====
    选择器带上前缀提高优先级：这些元素的样式写在 easyFileDesk.html 的
