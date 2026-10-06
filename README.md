@@ -119,6 +119,8 @@
 
 JS 侧通过 `pywebview_shim.js` 兼容层把调用转发到 Rust 的单一入口 `pywebview_call`，由它按方法名分发到约 43 个后端方法，因此前后端的行为可以与上游 Python 版逐条对照。窗口权限只声明 `core:default`（见 `capabilities/default.json`），不注册额外插件权限、不加载远程内容；由于桌面文件可能位于任意磁盘位置，本地资源协议（`asset:protocol`）的路径范围放得较宽。
 
+动效统一走 `theme/frame.css` 里的 motion token（`--md-motion-dur-*` / `--md-motion-ease-*`），不要再写死时长与曲线；面板进出与图标重排的时长在 Rust / JS 侧各有一份对应常量（`PANEL_IN_MS / PANEL_OUT_MS`、`REORDER_MS`），改时长需要一并同步。
+
 ```
 .
 ├── src/
@@ -193,7 +195,11 @@ npx @tauri-apps/cli@2 build --bundles nsis
 
 ## 贡献
 
-Issue 和 PR 都欢迎。新增动效请复用 `theme/frame.css` 里的 motion token，不要再写死时长与曲线；面板与重排的时长在 Rust / JS 侧各有一份对应常量（`PANEL_IN_MS / PANEL_OUT_MS`、`REORDER_MS`），改动时一并同步。
+这是一个自用工具，我没有精力长期维护，所以**不接受 PR**，仓库的 Pull Requests 入口已经关闭。
+
+- 遇到 bug、想要某个功能，欢迎提 [issue](https://github.com/railgun20001mobai-cmyk/easyDesktop-tauri/issues)，我会看，但不承诺处理时间
+- 需要改动的话直接 fork 到你自己的账号下做改版，GPL-3.0 允许，保留许可证并注明衍生关系即可
+- 想在本地跑起来或打安装包，见上面的「构建」一节
 
 ## 许可与声明
 
