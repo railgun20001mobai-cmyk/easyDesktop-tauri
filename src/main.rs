@@ -622,6 +622,9 @@ fn hide_panel(handle: &tauri::AppHandle) {
         let (sx, sy) = slide_from();
         // 内容层同步淡出（比进场更快，退场干脆）
         let _ = w.eval(panel_motion_js(false, PANEL_OUT_MS));
+        // 趁窗口还可见时通知前端收掉临时浮层（分类设置等），下次唤起就是干净的分类页；
+        // 放在这里而不是 hide() 之前，是因为隐藏后的 eval 可能被 WebView2 推迟到下次显示才执行
+        let _ = w.eval("try{window.edOnPanelHide&&window.edOnPanelHide()}catch(e){}");
         // 原路滑回屏幕外，滑完再隐藏；中途被新的呼出打断就不隐藏
         if !slide_window(&w, (tx, ty), (sx, sy), PANEL_OUT_MS, gen, true) {
             return;

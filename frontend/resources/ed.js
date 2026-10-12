@@ -2632,6 +2632,13 @@ function getFileType(fileName, fileType) {
  * 显示文件选择对话框
  * @returns {Promise<Object>} 包含选中文件列表和分类名的对象
  */
+/* 当前打开的「分类设置」对话框的取消入口；没打开时为 null */
+let _fileSelectorCancel = null;
+/* Rust 侧 hide_panel() 在真正隐藏窗口前 eval 这个，收起面板即取消对话框 */
+window.edOnPanelHide = function(){
+    if(_fileSelectorCancel) _fileSelectorCancel();
+};
+
 async function showFileSelectionDialog(class_name=null) {
     return new Promise(async (resolve) => {
         setTimeout(enableScroll,200)
@@ -2690,6 +2697,11 @@ async function showFileSelectionDialog(class_name=null) {
         // 初始化变量
         let selections = [];
         const checkedState = new Map();
+        /* 面板收起时由 Rust 侧调 window.edOnPanelHide，把这层浮层一起取消掉，
+           否则下次唤起会停在"分类设置还开着、但外面的世界已经换了"的状态。
+           这里就登记好（handleCancel 是函数声明，已提升），不等列表渲染完，
+           免得渲染那次 await 里收起面板会漏掉钩子 */
+        _fileSelectorCancel = handleCancel;
 
         try {
             // 获取文件信息
@@ -2698,6 +2710,13 @@ async function showFileSelectionDialog(class_name=null) {
 
             // 清空加载提示
             fileSelectionList.innerHTML = '';
+
+            // 已选中的排到最前面，一眼能看出这个分类里已经放了哪些；
+            // sort 是稳定的，未选中项保持原来的顺序
+            const picked = new Set(list_data);
+            selections.sort((a, b) =>
+                (picked.has(Utils.generateFileId(b.filePath)) ? 1 : 0) -
+                (picked.has(Utils.generateFileId(a.filePath)) ? 1 : 0));
 
             // 渲染每个项目
             selections.forEach(item => {
@@ -2711,7 +2730,7 @@ async function showFileSelectionDialog(class_name=null) {
                 checkbox.dataset.filePath = item.filePath;
 
                 // 初始状态为未选中
-                if(list_data.includes(Utils.generateFileId(item.filePath))){
+                if(picked.has(Utils.generateFileId(item.filePath))){
                     checkedState.set(item.filePath, true);
                     checkbox.checked = true;
                     listItem.className = 'file-selection-item active';
@@ -2773,6 +2792,7 @@ async function showFileSelectionDialog(class_name=null) {
 
         // 取消按钮事件
         function handleCancel() {
+            _fileSelectorCancel = null;
             Utils.hideWithMotion(dialogContainer);
             UIUtils.enableScroll();
             resolve({files_data: [], title: ''});
@@ -2809,6 +2829,7 @@ async function showFileSelectionDialog(class_name=null) {
             }
 
             categoryErrorMsg.style.display = 'none';
+            _fileSelectorCancel = null;
             Utils.hideWithMotion(dialogContainer);
             UIUtils.enableScroll();
             resolve({files_data: selectedItems, title: categoryTitle});
@@ -2818,6 +2839,7 @@ async function showFileSelectionDialog(class_name=null) {
         // 点击对话框外部关闭
         function handleOverlayClick(e) {
             if (e.target === overlay) {
+                _fileSelectorCancel = null;
                 Utils.hideWithMotion(dialogContainer);
                 UIUtils.enableScroll();
                 resolve({files_data: [], title: ''});

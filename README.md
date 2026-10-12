@@ -5,7 +5,7 @@
 把桌面图标收进一块贴边面板，桌面本身保持干净。
 鼠标移到屏幕角落（或按自定义热键）唤出面板，打开文件、进入目录、分类筛选、应用组、新建与重命名都在这一处完成。
 
-![license](https://img.shields.io/badge/license-GPL--3.0-green) ![platform](https://img.shields.io/badge/platform-Windows-blue) ![framework](https://img.shields.io/badge/Tauri-v2-orange) ![version](https://img.shields.io/badge/version-1.0.1-blueviolet)
+![license](https://img.shields.io/badge/license-GPL--3.0-green) ![platform](https://img.shields.io/badge/platform-Windows-blue) ![framework](https://img.shields.io/badge/Tauri-v2-orange) ![version](https://img.shields.io/badge/version-1.1.0-blueviolet)
 
 </div>
 
@@ -38,7 +38,7 @@
 
 ## 🚀 快速开始
 
-1. 到 [Releases](https://github.com/railgun20001mobai-cmyk/easyDesktop-tauri/releases) 下载 `easyDesktop-tauri_1.0.1_x64-setup.exe` 安装
+1. 到 [Releases](https://github.com/railgun20001mobai-cmyk/easyDesktop-tauri/releases) 下载 `easyDesktop-tauri_1.1.0_x64-setup.exe` 安装
 2. 启动后面板默认停在屏幕角落，鼠标移到左下角唤出，移开自动收起
 3. 想彻底腾出桌面：桌面右键 → 查看 → 取消勾选"显示桌面图标"，之后所有桌面文件都通过面板访问
 4. 程序常驻托盘，点托盘图标或齿轮进设置；卸载用安装目录里的 `uninstall.exe`
@@ -69,8 +69,9 @@
 - 左侧一列分类：固定的「全部」在最上方，往下是自建分类。点一个就把当前视图过滤成该分类的成员
 - 🎞️ 切换分类是一段"手机桌面翻页"动效：旧内容朝翻页方向退场、新内容从另一侧进场，方向跟着分类栏的位置走
 - 🖱️ **滚轮切分类**：指针停在分类栏上滚滚轮——栏内还能往这个方向滚时先滚列表，滚到尽头再继续滚就切上一个 / 下一个分类，选中的分类按钮自动滚进可视区。分类攒得多时不必在竖排按钮上瞄准点击，连着滚就能翻过去
-- ➕ 栏底的「+ 新建分类」：在弹出的选择框里勾文件、起名字，一次建好
+- ➕ 栏底的「+ 新建分类」：在弹出的选择框里勾文件、起名字，一次建好；选择框里**已选中的自动排在最前面**，一眼能看出这个分类已经放了哪些
 - ✏️ 右键任意分类：改名或调整成员，改名后仍留在栏里原来的位置
+- ↩️ 分类设置开着时收起面板，会自动当作"取消"关掉这层窗口，下次唤起直接回到分类页
 - ↕️ 分类顺序可直接拖拽调整（「全部」固定首位），常用的拉到最上面
 - ⭐ 图标上的分类角标可点：在当前分类里点一下就把这个文件移出 / 移入该分类，边浏览边整理
 - 分类与应用组、拖拽排序、视图切换互不干扰，过滤状态下照样能多选与拖动重排
