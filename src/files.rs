@@ -76,7 +76,9 @@ fn build_item(path: &Path, is_dir: bool) -> (&'static str, Value) {
 
     let kind = if is_dir || ext == "dir" {
         "dir"
-    } else if ext == ".exe" || ext == ".url" {
+    } else if ext == ".exe" || ext == ".url" || ext.eq_ignore_ascii_case(".lnk") {
+        // ext 仍是 .lnk 说明目标解析不出来：UWP/MSIX 快捷方式存的是 AUMID，
+        // 没有本地路径。这类同样是应用，判成 file 会让它拿不到真实图标
         "exe"
     } else {
         "file"
