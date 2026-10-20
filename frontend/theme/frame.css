@@ -39,6 +39,9 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    /* 不给这一条的话，面包屑/搜索框（padding 8px）的底边正好压在分隔线上，
+       而上方有 #main 的 20px 顶距，看着就是内容贴线、整体偏上 */
+    padding-bottom: 10px;
     margin-bottom: 15px;
     border-bottom: 1px solid rgba(0, 0, 0, 0.05);
 }
