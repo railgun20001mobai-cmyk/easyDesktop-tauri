@@ -102,8 +102,9 @@ fn build_item(path: &Path, is_dir: bool) -> (&'static str, Value) {
                     || ext.eq_ignore_ascii_case(".url")
                     || file_name_full.to_lowercase().ends_with(".lnk"));
             if want_real {
-                // 175% 缩放下 64px 会被放大导致模糊，取 256px（系统能提供的最大清晰度）
-                crate::icons::icon_file(&path_str, 256)
+                // 实际显示 64px，200% DPI 也只需要 128 物理像素；
+                // 再大只会让每个图标的解码像素成倍占用内存
+                crate::icons::icon_file(&path_str, 128)
                     .map(|p| crate::icons::asset_url(&p))
                     .unwrap_or_else(|| icon_for(&ext, false))
             } else {
@@ -242,7 +243,7 @@ pub fn sys_items() -> Vec<Value> {
     ];
     cfgs.iter()
         .map(|(name, clsid)| {
-            let ico = crate::icons::icon_file(clsid, 256)
+            let ico = crate::icons::icon_file(clsid, 128)
                 .map(|p| crate::icons::asset_url(&p))
                 .unwrap_or_else(|| "./resources/file_icos/dir.png".to_string());
             json!({

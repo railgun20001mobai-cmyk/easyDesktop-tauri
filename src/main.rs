@@ -535,6 +535,7 @@ fn open_js() -> String {
     // 表现为"框先出现、内容后出现"。show 时看到的是隐藏期间保留的旧 DOM，不会空白。
     "try{\
       window_state=true;\
+      if(typeof window.edOnPanelShow==='function')window.edOnPanelShow();\
       var p=document.getElementById('themeSettingsPanel');if(p)p.style.display='none';\
       if(typeof enableScroll==='function')enableScroll();\
       if(typeof fit_btnBar==='function')fit_btnBar();\

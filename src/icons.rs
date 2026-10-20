@@ -287,14 +287,21 @@ fn has_opaque_white_bg(img: &image::RgbaImage) -> bool {
     white >= 4
 }
 
-/// 取最佳图标：优先 256px（清晰），若被垫了白底则退回 64px
-pub fn extract_png_best(path: &str) -> Option<Vec<u8>> {
-    for size in [256i32, 64] {
-        if let Some(png) = extract_png(path, size) {
+/// 取最佳图标：优先请求尺寸，若被垫了白底则退回 64px
+pub fn extract_png_best(path: &str, size: i32) -> Option<Vec<u8>> {
+    let primary = size.clamp(16, 256);
+    let fallback = 64.min(primary);
+    let candidates: Vec<i32> = if fallback < primary {
+        vec![primary, fallback]
+    } else {
+        vec![primary]
+    };
+    for candidate in candidates {
+        if let Some(png) = extract_png(path, candidate) {
             let white_bg = image::load_from_memory(&png)
                 .map(|d| has_opaque_white_bg(&d.to_rgba8()))
                 .unwrap_or(false);
-            if !white_bg || size == 64 {
+            if !white_bg || candidate == fallback {
                 return Some(png);
             }
         }
@@ -303,10 +310,14 @@ pub fn extract_png_best(path: &str) -> Option<Vec<u8>> {
 }
 
 /// 取得（必要时生成）图标缓存文件，返回绝对路径
-pub fn icon_file(src_path: &str, _size: i32) -> Option<PathBuf> {
+pub fn icon_file(src_path: &str, size: i32) -> Option<PathBuf> {
+    let size = size.clamp(16, 256);
     let dir = cache_dir();
-    // 缓存键带上策略版本号，策略调整后旧缓存自动失效
-    let out = dir.join(format!("{}.png", path_hash(&format!("{}@best4", src_path))));
+    // 缓存键带上尺寸和策略版本号，尺寸调整后旧缓存自动失效
+    let out = dir.join(format!(
+        "{}.png",
+        path_hash(&format!("{}@s{}v1", src_path, size))
+    ));
 
     // 源文件比缓存新则重新提取
     let need = match (fs::metadata(&out), fs::metadata(src_path)) {
@@ -321,7 +332,7 @@ pub fn icon_file(src_path: &str, _size: i32) -> Option<PathBuf> {
         return Some(out);
     }
 
-    let png = extract_png_best(src_path)?;
+    let png = extract_png_best(src_path, size)?;
     fs::write(&out, png).ok()?;
     Some(out)
 }

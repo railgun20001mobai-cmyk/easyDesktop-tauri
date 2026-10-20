@@ -12,7 +12,7 @@ use std::sync::Mutex;
 
 use tauri::Manager;
 
-const VERSION: &str = "1.1.3";
+const VERSION: &str = "1.1.4";
 
 /// 复制到剪贴板的文件路径（对应旧版的复制/粘贴）
 static CLIPBOARD: Mutex<Option<Vec<String>>> = Mutex::new(None);
@@ -831,6 +831,11 @@ fn dispatch(method: &str, args: &[Value], app: &tauri::AppHandle) -> Value {
         // ===== 暂未实现 / 无副作用 =====
         "clean_temp" => {
             crate::icons::clear_cache();
+            crate::preview::clear_cache();
+            Value::Null
+        }
+        // 面板隐藏后只清预览缓存，图标磁盘缓存保留
+        "clear_preview_cache" => {
             crate::preview::clear_cache();
             Value::Null
         }

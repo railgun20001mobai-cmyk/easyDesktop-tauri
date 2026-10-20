@@ -2646,7 +2646,10 @@ function getFileType(fileName, fileType) {
 let _fileSelectorCancel = null;
 /* Rust 侧 hide_panel() 在真正隐藏窗口前 eval 这个，收起面板即取消对话框 */
 window.edOnPanelHide = function(){
+    panel_hidden = true;
     if(_fileSelectorCancel) _fileSelectorCancel();
+    cancelImagePreview();
+    schedulePreviewCacheClear();
 };
 
 async function showFileSelectionDialog(class_name=null) {
@@ -2985,39 +2988,113 @@ async function push(fData = null, useLoadDir = false, path = '') {
     }
 }
 let preview_runing = false
+let preview_gen = 0
+let panel_hidden = false
+let _previewCacheClearTimer = null
 // 【性能优化】图片缩略图结果缓存：重渲染时直接复用，不再为每个图片重复一次
 // 「PIL 解码 + 缩放 + JPEG 编码 + base64」的跨桥 IPC（原先每次刷新都全量重算）
 const imgPreviewCache = new Map()
+let imgPreviewCacheBytes = 0
+// base64 在 JS 里按 UTF-16 计，8M 字符约 16MB
+const IMG_PREVIEW_CACHE_MAX_CHARS = 8 * 1024 * 1024
+
 function clearImgPreviewCache(){
     imgPreviewCache.clear()
+    imgPreviewCacheBytes = 0
 }
+
+function imgPreviewCacheGet(key){
+    if(!imgPreviewCache.has(key)) return undefined
+    const value = imgPreviewCache.get(key)
+    // Map 插入序当 LRU：命中后挪到队尾
+    imgPreviewCache.delete(key)
+    imgPreviewCache.set(key, value)
+    return value
+}
+
+function imgPreviewCacheSet(key, value){
+    if(imgPreviewCache.has(key)){
+        const old = imgPreviewCache.get(key)
+        imgPreviewCacheBytes -= old ? old.length : 0
+        imgPreviewCache.delete(key)
+    }
+    imgPreviewCache.set(key, value)
+    if(value) imgPreviewCacheBytes += value.length
+    while(imgPreviewCacheBytes > IMG_PREVIEW_CACHE_MAX_CHARS && imgPreviewCache.size > 1){
+        const oldest = imgPreviewCache.keys().next().value
+        const old = imgPreviewCache.get(oldest)
+        imgPreviewCacheBytes -= old ? old.length : 0
+        imgPreviewCache.delete(oldest)
+    }
+}
+
+function restorePreviewIcons(){
+    document.querySelectorAll('img[data-ed-original-src]').forEach(img => {
+        img.src = img.dataset.edOriginalSrc
+        delete img.dataset.edOriginalSrc
+    })
+}
+
+function cancelImagePreview(){
+    preview_gen++
+    preview_runing = false
+}
+
+function schedulePreviewCacheClear(){
+    if(_previewCacheClearTimer) clearTimeout(_previewCacheClearTimer)
+    // 短暂收起再呼出时保留缓存；隐藏超过 15 秒才真正释放
+    _previewCacheClearTimer = setTimeout(async () => {
+        _previewCacheClearTimer = null
+        if(!panel_hidden) return
+        cancelImagePreview()
+        restorePreviewIcons()
+        clearImgPreviewCache()
+        try { await ApiHelper.call("clear_preview_cache") } catch(e) { console.log("clear preview cache error") }
+    }, 15000)
+}
+
+window.edOnPanelShow = function(){
+    panel_hidden = false
+    if(_previewCacheClearTimer){
+        clearTimeout(_previewCacheClearTimer)
+        _previewCacheClearTimer = null
+    }
+    // 隐藏超过 15 秒会清掉缓存并还原图标；若此次呼出走的是“数据没变”快路径，
+    // 不会触发重渲染，需要在这里把预览图补回来
+    image_preview()
+}
+
 async function image_preview() {
+    if(preview_runing) return;
+    preview_runing = true;
+    const gen = ++preview_gen;
     try{
-        if(preview_runing) return;
         let config = await ApiHelper.getConfig()
+        if(gen !== preview_gen) return;
         if(config["imgpre"]==false)return
-        preview_runing = true;
         for(let file of AppState.files_data){
-            if(preview_runing==false) break;
+            if(gen !== preview_gen) return;
             if(![".png",".jpg",".jpeg",".bmp",".gif"].includes(file.fileType)) continue;
             const el = document.getElementById(Utils.generateFileId(file.filePath));
             // 元素不存在（未渲染 / 已被过滤）时跳过，避免原代码里 te 为 null 直接抛错
             // 中断整个预览循环
             if(!el || !el.children || !el.children[1]) continue;
-            let view_img = imgPreviewCache.get(file.filePath);
+            let view_img = imgPreviewCacheGet(file.filePath);
             if(view_img === undefined){
                 view_img = await ApiHelper.call("get_imageBase64", file.filePath);
-                if(imgPreviewCache.size > 400) imgPreviewCache.clear();
-                imgPreviewCache.set(file.filePath, view_img || null);
+                if(gen !== preview_gen) return;
+                imgPreviewCacheSet(file.filePath, view_img || null);
             }
             if(view_img){
-                el.children[1].src = view_img
+                const iconEl = el.children[1];
+                if(!iconEl.dataset.edOriginalSrc) iconEl.dataset.edOriginalSrc = iconEl.src;
+                iconEl.src = view_img
             }
         }
-        preview_runing = false;
     }catch(e){
         console.log("image_preview error")
-        preview_runing = false
+    }finally{
+        if(gen === preview_gen) preview_runing = false;
     }
 }
 async function change_cl_state(filePath, cl){
