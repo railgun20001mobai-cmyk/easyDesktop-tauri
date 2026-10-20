@@ -2516,7 +2516,17 @@ const EventManager = {
             try{if(event.target.parentNode.id=="menuAddToGroup")return}catch(e){}
             MenuManager.hideAllMenus();
 
-            if (["content_box", "main","filesContainer","content_col"].includes(event.target.id)) {
+            // 左侧分类栏的空白也算"点空白收起"：#class_bar 是栏底空块与按钮缝隙，#box1 是竖栏右内边距条。
+            // 分类按钮与"+ 新建分类"不在此列，点了照常切分类/建分类。
+            const BLANK = ["content_box", "main", "filesContainer", "content_col", "box1", "class_bar"];
+            const el = event.target;
+            // 竖向滚动条压在 clientWidth 之外，按在滚动条上不该把面板收掉
+            const onScrollbar = el.clientWidth > 0 && el.scrollHeight > el.clientHeight
+                && event.offsetX >= el.clientWidth;
+            // 拖拽排序/框选收尾时浏览器会补一个 click，落点常常在空白上：
+            // 这个监听和 DragManager 那个是两条独立的，拿不到它的消费逻辑，只能自己判一次标记
+            if (BLANK.includes(el.id) && !onScrollbar
+                && !DragManager.suppressClick && !Marquee.suppress) {
                 ApiHelper.call('close_fullscreen_window');
             }
         });
