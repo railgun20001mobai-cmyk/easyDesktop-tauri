@@ -527,7 +527,7 @@ body::before {
     align-items: center;
     z-index: 2000;
     display: none;
-    backdrop-filter: blur(5px);
+    background-color: rgba(0, 0, 0, 0.35);
 }
 
 .rename-container {
@@ -1054,7 +1054,7 @@ input:checked + .slider:before {
     display: none;
     justify-content: center;
     align-items: center;
-    backdrop-filter: blur(8px);
+    background-color: rgba(0, 0, 0, 0.35);
 }
 
 .group-view-container {
@@ -1189,7 +1189,6 @@ input:checked + .slider:before {
     left: 0px;
     display: flex;
     background-color: rgba(0, 0, 0, 0.5);
-    backdrop-filter: blur(8px);
 }
 .update-container{ 
     margin: auto;

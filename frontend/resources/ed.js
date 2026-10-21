@@ -2768,8 +2768,10 @@ async function showFileSelectionDialog(class_name=null) {
                     checkedState.set(item.filePath, checkbox.checked);
                 });
 
-                // 图标
+                // 图标：列表可能上百项，离屏的先不解码，打开对话框更快
                 icon = document.createElement('img');
+                icon.loading = 'lazy';
+                icon.decoding = 'async';
                 icon.src = item.fileType=="应用组"?"./resources/imgs/group.png":item.ico;
                 
 
@@ -2877,6 +2879,9 @@ async function showFileSelectionDialog(class_name=null) {
             mutations.forEach(mutation => {
                 if (mutation.attributeName === 'style' && dialogContainer.style.display === 'none') {
                     cleanup();
+                    // 关掉后把整份列表从 DOM 摘掉：上百个条目连同解码后的图标
+                    // 若一直留着，面板隐藏期间会白白占用内存；下次打开会重新构建
+                    fileSelectionList.replaceChildren();
                     observer.disconnect();
                 }
             });
@@ -3360,7 +3365,8 @@ async function load_bgType(tid, strength){
         }else{
             document.body.style.backgroundColor = "rgba(0,0,0,0)"
         }
-        document.body.style.backdropFilter = `blur(${Math.round(strength/4)}px)`
+        // body 的 backdrop-filter 在这里没有可模糊的对象，纯属全屏空转
+        document.body.style.backdropFilter = ""
     }else{
         document.body.style.background = "unset"
         document.body.style.backdropFilter = ""   // 模式3原本就没有 blur，显式清掉防止从模式2切来残留
