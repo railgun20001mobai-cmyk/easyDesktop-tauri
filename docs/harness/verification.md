@@ -10,12 +10,14 @@
 ## 1. 编译与构建
 
 ```bash
+cargo test
 cargo check
 ```
 
+- 单测覆盖排序合并、拼音索引、版本来源；当前 11 个用例必须全过。
 - 若报 `failed to read plugin permissions ... D:\easyDesktop-tauri\...`：这是搬家前 `target/` 的旧绝对路径，
   执行 `cargo clean`（只删构建缓存）后重跑。
-- `cargo test` 当前 0 个用例，不能作为验收通过依据。
+- 单测不覆盖窗口/前端，不能替代第 2 节真机清单。
 - release：
 
 ```bash
@@ -34,6 +36,7 @@ npx @tauri-apps/cli@2 build --bundles nsis
 - [ ] 点击桌面收起（`out_cf_type=2`）；全屏模式下点分类栏/图标区空白可收起，拖拽/框选松手不误收。
 - [ ] 设置面板锁：打开设置/子对话框时鼠标移出不会收起；关闭后恢复自动收起。
 - [ ] 分类：切换、滚轮切分类、新建/改名/删除、拖拽排序、角标移入移出、分类设置取消。
+- [ ] 排序一致性：新增/删除一个桌面文件后重启，启动合并后的顺序与面板显示一致；已保存的相对顺序不变。
 - [ ] 搜索：输入过滤、清空恢复、切目录后不残留、收起再呼出不残留。
 - [ ] 视图：网格/列表切换；快速连点 10 次不空白；多选、框选、拖拽重排正常。
 - [ ] 文件：新建、重命名、删除、粘贴、打开、在资源管理器中显示。
@@ -65,8 +68,8 @@ sha256sum config.json user_class.json user_groups.json cl_data.json
 
 ## 5. 发布
 
-1. 六处版本号一致：`Cargo.toml`、`Cargo.lock`、`tauri.conf.json`、`src/api.rs`、`src/config.rs`、`README.md`。
-2. `cargo build --release` 通过；`npx @tauri-apps/cli@2 build --bundles nsis` 生成安装包。
+1. 版本以 `Cargo.toml` 为唯一来源（`Cargo.lock` 自动跟随）；同步 `tauri.conf.json` 与 README 的徽章/安装包名。
+2. `cargo test` / `cargo check` 通过；`cargo build --release` 通过；`npx @tauri-apps/cli@2 build --bundles nsis` 生成安装包。
 3. 在旧版本上实际覆盖安装/升级一次；4 个数据文件哈希不变；分类与排序正常。
 4. 跑完第 2 节真机清单。
 5. push / tag / 发布到 GitHub 前先获得明确同意；永远不要 push 到 upstream。

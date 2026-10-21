@@ -18,6 +18,7 @@ Harness 会直接读根目录的 `AGENTS.md`；Trae 若没自动带上，在设�
 ## 命令（Windows，仓库根目录）
 
 ```bash
+cargo test                                   # 纯函数单测
 npx @tauri-apps/cli@2 dev                    # 开发运行，前端改动可热重载
 cargo build --release                        # release 编译
 npx @tauri-apps/cli@2 build --bundles nsis   # NSIS 安装包 → target/release/bundle/nsis/
@@ -26,7 +27,8 @@ npx @tauri-apps/cli@2 build --bundles nsis   # NSIS 安装包 → target/release
 - 前端资源在构建时内嵌：只改 `frontend/` 也要重新构建才进安装包。
 - 仓库搬家后若报 `failed to read plugin permissions ... <旧路径>`，是 `target/` 里残留了旧绝对路径；先
   `cargo clean` 再重试，不要改路径去迁就旧缓存。
-- 当前没有自动化测试（`cargo test` 为 0 个用例），不能当验收；验收按 `docs/harness/verification.md`。
+- `cargo test` 覆盖排序合并、拼音索引、版本来源等纯函数（当前 11 个用例）；不覆盖窗口/前端，UI 验收仍按
+  `docs/harness/verification.md` 真机走。
 - 开发运行的配置数据在 `target/debug/`，与安装目录 `D:\EasyDesktop\easyDesktop-app` 的用户数据隔离。
 
 ## 硬性约束
@@ -34,9 +36,9 @@ npx @tauri-apps/cli@2 build --bundles nsis   # NSIS 安装包 → target/release
 - **唯一 IPC 通道**：前端业务调用只走 `window.pywebview.api.<method>(...)` → `pywebview_call` →
   `api.rs::dispatch`。新增后端方法只在 `dispatch` 加分支；不新增 Tauri command（确实无法走 dispatch 时先说明），
   不放宽 `capabilities/default.json`。
-- **模块归属**：窗口/热区/焦点/托盘/动画→`main.rs`；文件系统→`files.rs`；持久化→`config.rs`；图标→
-  `icons.rs`；缩略图→`preview.rs`；Win32→`win32.rs`；WebView2 内存→`webview_mem.rs`；`api.rs` 只做分发与
-  薄适配。历史遗留：`api.rs` 里仍有文件操作实现，新代码不要再往里堆。
+- **模块归属**：窗口/热区/焦点/托盘/动画→`main.rs`；文件系统→`files.rs`；排序合并→`order.rs`；持久化→
+  `config.rs`；图标→`icons.rs`；缩略图→`preview.rs`；Win32→`win32.rs`；WebView2 内存→`webview_mem.rs`；
+  `api.rs` 只做分发与薄适配。历史遗留：`api.rs` 里仍有文件操作实现，新代码不要再往里堆。
 - **依赖接口而非实现**：Rust 跨模块只用 `pub` 函数/类型，不直接读写别模块的 `static`；JS 模块之间用对象
   方法，不新增裸全局变量。
 - **组合优先**：不引入 trait 继承层次或 JS 类继承；复用靠组合、小函数。
@@ -56,17 +58,16 @@ npx @tauri-apps/cli@2 build --bundles nsis   # NSIS 安装包 → target/release
 
 ## 版本与同步
 
-- 版本号散落在 6 个文件：`Cargo.toml`、`Cargo.lock`、`tauri.conf.json`、`src/api.rs`（`VERSION`）、
-  `src/config.rs`（`default_config()` 与 `init()`）、`README.md`（徽章 + 快速开始）。发布前必须全部一致。
-- 已知缺陷：`src/config.rs` 的 `init()` 把 version 写死为 `"1.1.3"`（当前发布版本 1.1.7）；改版本时顺手修掉，
-  不要复制这个写法。
+- 版本唯一来源是 `Cargo.toml`；Rust 代码统一用 `config::APP_VERSION`（`env!("CARGO_PKG_VERSION")`），
+  不要手写版本字符串。`Cargo.lock` 由 cargo 自动更新。
+- 发版时同步 `tauri.conf.json` 和 `README.md`（徽章 + 安装包文件名）。
 - 动效时长三处同步：`frontend/theme/frame.css` 的 `--md-motion-*`、`ed.js` 的 `DUR` / `REORDER_MS`、
   `src/main.rs` 的 `PANEL_IN_MS` / `PANEL_OUT_MS`。
 
 ## 完成定义
 
 1. 一次只做一个可验证的增量，不把不相关改动混在一起。
-2. `cargo check` 通过（当前基线：`cargo clean` 后 `cargo check` 用时约 1 分钟，exit 0，无警告）。
+2. `cargo test` 与 `cargo check` 通过（当前基线：11 个单测全过，`cargo check` exit 0、无警告）。
 3. 改 UI/窗口/热区/托盘/内存：按 `docs/harness/verification.md` 真机走一遍，并检查 `ed_calls.log` 无异常。
 4. 改数据：四个数据文件改动前后哈希一致（除非本次就是要改数据）。
 5. 发版：六处版本号一致 + NSIS 包实际安装/升级一次 + 真机清单通过。

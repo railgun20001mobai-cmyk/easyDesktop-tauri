@@ -71,9 +71,10 @@
 
 - 症状：程序内版本、安装包版本、README 不一致；`config.json` 的 `version` 被写成 1.1.3。
 - 根因：版本号散在 6 个文件，`src/config.rs::init()` 还有一处写死。
-- 规则：发版前按 `AGENTS.md`「版本与同步」逐处对齐，并修掉 `init()` 的写死值；不要从这个写法复制。
-- 证据：当前 `config.rs::init()` 写死 `"1.1.3"`（发布版本 1.1.7）。
-- 验证：grep 六个位置 + 安装后程序内版本一致。
+- 规则：版本只从 `Cargo.toml` 取（`config::APP_VERSION`）；发版只手动同步 `tauri.conf.json` 与 README。
+- 证据：1.2.0 前 `config.rs::init()` 写死 `"1.1.3"`，`api.rs` 另有一份 `1.1.7`。
+- 修复：1.2.0 起 `default_config()` / `init()` / `api.rs` 共用 `APP_VERSION`，不再维护第二份字符串。
+- 验证：`cargo test` 的 `default_config_uses_package_version`；安装后程序内版本与 exe 属性一致。
 
 ## 10. 抢焦点与全屏游戏互相打架
 
@@ -99,3 +100,12 @@
 - 规则：开发运行用 `target/debug/`（数据隔离）；破坏性操作在临时目录或副本上做；必须动真实数据时先哈希、
   改后复核；备份最多一份，删除走回收站。
 - 验证：见 `verification.md` 的哈希命令。
+
+## 13. 启动排序与渲染排序各写一套
+
+- 症状：启动后写入的 `dir_order` 顺序，与打开面板时看到的顺序不一致；新增文件位置对不上。
+- 根因：启动合并用“新增项在完整扫描结果里的下标”，渲染排序用“移除已保存项后剩余列表的下标”；
+  两者在“已保存项与新项交错”时结果不同。上游 `merge_lists` 用的是前者。
+- 规则：只保留 `order::merge_order` 一份实现，启动与渲染都调用它；改规则先改 `src/order.rs` 的单测。
+- 证据：1.2.0 前 `config.rs::merge_desktop_order` 与 `files.rs::order_items` 各写一套。
+- 验证：`cargo test` 的 `new_item_uses_original_index_not_remaining_index`；真机新增文件后重启对比顺序。

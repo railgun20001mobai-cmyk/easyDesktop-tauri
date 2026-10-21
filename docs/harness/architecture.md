@@ -4,7 +4,7 @@
 
 - 单窗口 Windows 桌面面板：Rust 侧负责窗口生命周期、热区、Win32、文件系统、配置、图标、缩略图和
   WebView2 内存；前端是上游 pywebview 版原样沿用的原生 HTML/CSS/JS。
-- 上游为 `vicent-yx/easyDesktop`（Python + pywebview，基线 2.9.0），本项目独立编号（当前 1.1.7）。
+- 上游为 `vicent-yx/easyDesktop`（Python + pywebview，基线 2.9.0），本项目独立编号（当前 1.2.0）。
   上游源码在 `D:\EasyDesktop\easyDesktop-src`，只作对照，不在本仓库修改。
 
 ## 调用链
@@ -27,9 +27,10 @@ ed.js → window.pywebview.api.<method>(...args)
 | 文件 | 负责 | 注意 |
 | --- | --- | --- |
 | `src/main.rs` | 窗口生命周期、角落热区轮询、焦点补偿、全屏抑制、托盘/热键、滑动动画、可见性锁、日志 | 状态机核心，改动必须真机验证 |
-| `src/api.rs` | IPC 分发（约 43 个方法）＋ 历史文件/分类/应用组操作实现 | 1133 行，新实现不要再堆这里 |
-| `src/files.rs` | 目录扫描、`desktop_paths()`、排序持久化 | 新建/改名/删除的旧实现仍在 `api.rs` |
-| `src/config.rs` | `config.json` / `user_class.json` / `user_groups.json` / `cl_data.json` 读写 | 原子写、损坏备份、版本兼容 |
+| `src/api.rs` | IPC 分发（约 43 个方法）＋ 历史文件/分类/应用组操作实现 | 约 1080 行，新实现不要再堆这里 |
+| `src/files.rs` | 目录扫描、`scan_view()`、`desktop_paths()`、条目排序 | 新建/改名/删除的旧实现仍在 `api.rs` |
+| `src/order.rs` | 纯函数：保存顺序解析、启动/渲染共用的顺序合并 | 有单测，改规则先改测试 |
+| `src/config.rs` | `config.json` / `user_class.json` / `user_groups.json` / `cl_data.json` 读写 | 原子写、锁内读改写、损坏备份、版本来源 |
 | `src/icons.rs` | 系统图标提取与缓存、自定义图标 | `.lnk` 目标解析有历史坑 |
 | `src/preview.rs` | 图片缩略图、有上限的 LRU | 尺寸与内存强相关 |
 | `src/win32.rs` | 前台窗口、全屏检测、圆角、光标、DPI、屏幕尺寸、本地时间 | 仅 Windows |
@@ -83,6 +84,6 @@ ed.js → window.pywebview.api.<method>(...args)
 
 ## 已知结构债务
 
-- `ed.js` 4657 行、`api.rs` 1133 行，无自动化测试，是本项目最大的回归风险。
-- 版本号分散在 6 个文件，`src/config.rs::init()` 仍把 version 写成 `"1.1.3"`。
+- `ed.js` 4657 行、`api.rs` 约 1080 行，前端与窗口逻辑仍靠真机清单；Rust 纯函数已有 11 个单测。
+- 配置仍是 untyped `Value`，字段默认值散落在各处；后续可收成类型化结构。
 - `api.rs` 内仍有文件操作实现，与 `files.rs` 职责重叠；新代码按 `AGENTS.md` 的模块归属放置。

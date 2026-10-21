@@ -5,7 +5,7 @@
 把桌面图标收进一块贴边面板，桌面本身保持干净。
 鼠标移到屏幕角落（或按自定义热键）唤出面板，打开文件、进入目录、分类筛选、应用组、新建与重命名都在这一处完成。
 
-![license](https://img.shields.io/badge/license-GPL--3.0-green) ![platform](https://img.shields.io/badge/platform-Windows-blue) ![framework](https://img.shields.io/badge/Tauri-v2-orange) ![version](https://img.shields.io/badge/version-1.1.7-blueviolet)
+![license](https://img.shields.io/badge/license-GPL--3.0-green) ![platform](https://img.shields.io/badge/platform-Windows-blue) ![framework](https://img.shields.io/badge/Tauri-v2-orange) ![version](https://img.shields.io/badge/version-1.2.0-blueviolet)
 
 </div>
 
@@ -38,7 +38,7 @@
 
 ## 🚀 快速开始
 
-1. 到 [Releases](https://github.com/railgun20001mobai-cmyk/easyDesktop-tauri/releases) 下载 `easyDesktop-tauri_1.1.7_x64-setup.exe` 安装
+1. 到 [Releases](https://github.com/railgun20001mobai-cmyk/easyDesktop-tauri/releases) 下载 `easyDesktop-tauri_1.2.0_x64-setup.exe` 安装
 2. 启动后面板默认停在屏幕角落，鼠标移到左下角唤出，移开自动收起
 3. 想彻底腾出桌面：桌面右键 → 查看 → 取消勾选"显示桌面图标"，之后所有桌面文件都通过面板访问
 4. 程序常驻托盘，点托盘图标或齿轮进设置；卸载用安装目录里的 `uninstall.exe`
@@ -110,7 +110,7 @@
 | 渲染 | pywebview 封装的系统 WebView | WebView2 |
 | 第三方库 | Pillow、keyboard、pynput、icoextract、darkdetect 等 | 编译期并入二进制，运行时不再依赖 |
 | 运行环境 | 需随包带上 Python 解释器与上述库 | 单个 exe，安装包约 9.4 MB |
-| 后端代码量 | 十余个 Python 模块，约 7000 行 | 7 个 Rust 模块，约 3900 行 |
+| 后端代码量 | 十余个 Python 模块，约 7000 行 | 8 个 Rust 模块，约 4200 行 |
 
 前端仍是原生 HTML + CSS + JS，未引入框架与打包器；资源在打包时内嵌进可执行文件。
 
