@@ -1,6 +1,6 @@
 [package]
 name = "easydesktop"
-version = "1.1.4"
+version = "1.1.5"
 description = "easyDesktop - 桌面增强工具（Rust/Tauri 重构版）"
 edition = "2021"
 
@@ -19,6 +19,8 @@ base64 = "0.23.1"
 tauri-plugin-autostart = "2.5.1"
 tauri-plugin-global-shortcut = "2.3.2"
 tauri-plugin-dialog = "2"
+# 与 Tauri 内部版本保持一致；用于隐藏时降低 WebView2 内存 / 挂起渲染器
+webview2-com = "0.38"
 
 # Windows 原生 API（精选 feature，避免拉入整个 windows 元数据）
 [dependencies.windows]

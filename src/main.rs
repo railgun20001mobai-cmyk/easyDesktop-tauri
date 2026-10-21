@@ -5,6 +5,7 @@ mod config;
 mod files;
 mod icons;
 mod preview;
+mod webview_mem;
 mod win32;
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -13,6 +14,10 @@ use std::time::Duration;
 use tauri::{Manager, PhysicalPosition, PhysicalSize, WebviewWindow};
 
 static WINDOW_VISIBLE: AtomicBool = AtomicBool::new(false);
+/// 每次呼出/收起都递增，用来作废旧的隐藏降内存/挂起定时器
+static POWER_GEN: AtomicU64 = AtomicU64::new(0);
+const LOW_MEM_AFTER: Duration = Duration::from_secs(20);
+const SUSPEND_AFTER: Duration = Duration::from_secs(90);
 static LOCKED: AtomicBool = AtomicBool::new(false);
 /// 可见性锁的引用计数：设置面板锁着时，子对话框（重命名/删除等）关闭会无条件解锁，
 /// 用计数就不会把设置面板的锁一起清掉（问：设置到一半鼠标滑出去面板自己关了）
@@ -71,7 +76,7 @@ static LAST_ACTIVATE_AT: AtomicU64 = AtomicU64::new(0);
 static SUPPRESS_LOGGED: AtomicBool = AtomicBool::new(false);
 
 /// 写一行日志到 exe 同目录的 ed_calls.log（正式版也写：出问题时有据可查）
-fn log(msg: &str) {
+pub(crate) fn log(msg: &str) {
     use std::io::Write;
     log_rotate_if_needed();
     if let Ok(mut f) = std::fs::OpenOptions::new()
@@ -547,6 +552,9 @@ fn open_js() -> String {
 }
 
 fn show_panel(handle: &tauri::AppHandle) {
+    POWER_GEN.fetch_add(1, Ordering::SeqCst);
+    // 先投递 Resume，等主线程处理时再摆位/显示；挂起中的 WebView2 需要先恢复
+    webview_mem::resume(handle);
     SHOWN_AT.store(now_ms(), Ordering::SeqCst);
     NEEDS_ACTIVATION.store(true, Ordering::SeqCst);
     // 呼出时会强制关掉设置面板（open_js），所以锁计数一并清零，
@@ -609,6 +617,7 @@ fn show_panel(handle: &tauri::AppHandle) {
 }
 
 fn hide_panel(handle: &tauri::AppHandle) {
+    let power_gen = POWER_GEN.fetch_add(1, Ordering::SeqCst) + 1;
     let gen = SLIDE_GEN.fetch_add(1, Ordering::SeqCst) + 1;
     // 收起时解除热区武装：鼠标不离开热区就不会被立刻重新呼出
     CORNER_ARMED.store(false, Ordering::SeqCst);
@@ -641,6 +650,28 @@ fn hide_panel(handle: &tauri::AppHandle) {
             let _ = done_tx.send(());
         });
         let _ = done_rx.recv_timeout(Duration::from_millis(500));
+        // 窗口隐藏后同步把 WebView2 控制器设为不可见：这是 TrySuspend 成功的前提
+        webview_mem::set_invisible(&h);
+
+        // 隐藏后分两档降内存；期间只要再次呼出/收起，power_gen 就会变化并让这里直接退出
+        let h3 = h.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(LOW_MEM_AFTER);
+            if POWER_GEN.load(Ordering::SeqCst) != power_gen
+                || WINDOW_VISIBLE.load(Ordering::SeqCst)
+            {
+                return;
+            }
+            webview_mem::set_low(&h3);
+
+            std::thread::sleep(SUSPEND_AFTER.saturating_sub(LOW_MEM_AFTER));
+            if POWER_GEN.load(Ordering::SeqCst) != power_gen
+                || WINDOW_VISIBLE.load(Ordering::SeqCst)
+            {
+                return;
+            }
+            webview_mem::try_suspend(&h3);
+        });
     });
 }
 
