@@ -4,22 +4,19 @@
 //! 最新扫描结果里的原始下标插回，已消失的条目剔除。
 
 use serde_json::Value;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
-/// 从配置里取某个目录已保存的顺序，兼容字符串与 `{filePath}` 两种写法
-pub fn saved_paths(cfg: &Value, dir_key: &str) -> Vec<String> {
-    cfg.get("dir_order")
-        .and_then(|d| d.get(dir_key))
-        .and_then(|v| v.as_array())
-        .map(|a| {
-            a.iter()
-                .filter_map(|x| {
-                    x.as_str()
-                        .map(|s| s.to_string())
-                        .or_else(|| x.get("filePath").and_then(|v| v.as_str()).map(|s| s.to_string()))
-                })
-                .collect()
-        })
+/// 排序项兼容两种历史写法：纯字符串或 `{filePath}` 对象
+pub fn item_path(item: &Value) -> Option<&str> {
+    item.as_str()
+        .or_else(|| item.get("filePath").and_then(|v| v.as_str()))
+}
+
+/// 从配置里取某个目录已保存的顺序
+pub fn saved_paths(orders: &BTreeMap<String, Vec<Value>>, dir_key: &str) -> Vec<String> {
+    orders
+        .get(dir_key)
+        .map(|a| a.iter().filter_map(item_path).map(str::to_string).collect())
         .unwrap_or_default()
 }
 
@@ -53,9 +50,23 @@ pub fn merge_order(saved: &[String], paths: &[String]) -> Vec<String> {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::collections::BTreeMap;
 
     fn list(items: &[&str]) -> Vec<String> {
         items.iter().map(|s| s.to_string()).collect()
+    }
+
+    fn orders(items: &[(&str, serde_json::Value)]) -> BTreeMap<String, Vec<Value>> {
+        items
+            .iter()
+            .map(|(k, v)| {
+                let arr = v
+                    .as_array()
+                    .expect("测试里的 dir_order 必须是数组")
+                    .clone();
+                (k.to_string(), arr)
+            })
+            .collect()
     }
 
     #[test]
@@ -103,12 +114,8 @@ mod tests {
 
     #[test]
     fn saved_paths_accepts_strings_and_objects() {
-        let cfg = json!({
-            "dir_order": {
-                "desktop": ["a", { "filePath": "b" }, 1, null]
-            }
-        });
-        assert_eq!(saved_paths(&cfg, "desktop"), list(&["a", "b"]));
-        assert!(saved_paths(&cfg, "missing").is_empty());
+        let map = orders(&[("desktop", json!(["a", { "filePath": "b" }, 1, null]))]);
+        assert_eq!(saved_paths(&map, "desktop"), list(&["a", "b"]));
+        assert!(saved_paths(&map, "missing").is_empty());
     }
 }

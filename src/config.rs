@@ -1,15 +1,160 @@
 //! 配置读写（沿用旧版的 config.json / user_class.json / cl_data.json，放在 exe 同目录）
 
-use serde_json::{json, Value};
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Map, Value};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
-static CONFIG: OnceLock<Mutex<Value>> = OnceLock::new();
+static CONFIG: OnceLock<Mutex<Config>> = OnceLock::new();
 static EXE_DIR: OnceLock<PathBuf> = OnceLock::new();
 
 /// 唯一版本来源：`Cargo.toml` 的 `version`。运行时/配置里的版本都从这里取，避免多处手改漂移。
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// 面板按「分辨率 + 缩放」记住的尺寸与位置
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ScreenInfo {
+    pub w: i64,
+    pub h: i64,
+    pub x: i64,
+    pub y: i64,
+    #[serde(rename = "outPos")]
+    pub out_pos: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ScreensWinInfo {
+    pub w_pc: f64,
+    pub h_pc: f64,
+    pub infos: BTreeMap<String, ScreenInfo>,
+}
+
+impl Default for ScreensWinInfo {
+    fn default() -> Self {
+        Self {
+            w_pc: 0.65,
+            h_pc: 0.4,
+            infos: BTreeMap::new(),
+        }
+    }
+}
+
+/// 主配置。
+///
+/// 已知字段类型化，未知字段落在 `extra`：前端新增设置项时不需要同步改这里，
+/// 也不会因为反序列化丢掉用户已写入的键。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Config {
+    pub version: String,
+    pub theme: String,
+    pub language: String,
+    #[serde(rename = "themeChangeType")]
+    pub theme_change_type: String,
+    pub view: String,
+    pub auto_start: bool,
+    pub use_bg: bool,
+    pub bg: String,
+    pub ms_ef: i64,
+    pub ign_update: String,
+    pub width: i64,
+    pub height: i64,
+    pub full_screen: bool,
+    pub fdr: bool,
+    pub cf_type: String,
+    pub cf_hotkey: String,
+    pub corner_size: String,
+    pub out_cf_type: String,
+    #[serde(rename = "show_sysApp")]
+    pub show_sys_app: bool,
+    #[serde(deserialize_with = "de_f64_flexible")]
+    pub scale: f64,
+    pub df_dir: String,
+    pub df_dir_name: String,
+    pub of_s: bool,
+    #[serde(rename = "outPos")]
+    pub out_pos: String,
+    pub imgpre: bool,
+    #[serde(rename = "bgType")]
+    pub bg_type: String,
+    pub blur_bg: bool,
+    pub blur_effect: i64,
+    pub dir_order: BTreeMap<String, Vec<Value>>,
+    pub class_order: Vec<String>,
+    pub ico: BTreeMap<String, String>,
+    pub dbc_action: String,
+    pub show_hidden_file: bool,
+    pub custom: Value,
+    #[serde(rename = "screens_winInfo")]
+    pub screens_win_info: ScreensWinInfo,
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        let (w, h) = crate::win32::screen_size();
+        Self {
+            version: APP_VERSION.to_string(),
+            theme: "light".to_string(),
+            language: "zh-CN".to_string(),
+            theme_change_type: "1".to_string(),
+            view: "block".to_string(),
+            auto_start: false,
+            use_bg: false,
+            bg: String::new(),
+            ms_ef: 0,
+            ign_update: String::new(),
+            width: (w as f64 * 0.65) as i64,
+            height: (h as f64 * 0.4) as i64,
+            full_screen: true,
+            fdr: true,
+            cf_type: "1".to_string(),
+            cf_hotkey: String::new(),
+            corner_size: "2".to_string(),
+            out_cf_type: "2".to_string(),
+            show_sys_app: false,
+            scale: 80.0,
+            df_dir: "desktop".to_string(),
+            df_dir_name: "桌面".to_string(),
+            of_s: true,
+            out_pos: "1".to_string(),
+            imgpre: true,
+            bg_type: "3".to_string(),
+            blur_bg: true,
+            blur_effect: 30,
+            dir_order: BTreeMap::new(),
+            class_order: Vec::new(),
+            ico: BTreeMap::new(),
+            dbc_action: "1".to_string(),
+            show_hidden_file: false,
+            custom: json!({}),
+            screens_win_info: ScreensWinInfo::default(),
+            extra: Map::new(),
+        }
+    }
+}
+
+fn de_f64_flexible<'de, D>(deserializer: D) -> Result<f64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let v = Value::deserialize(deserializer)?;
+    match v {
+        Value::Number(n) => n
+            .as_f64()
+            .ok_or_else(|| serde::de::Error::custom("数字无法转换为 f64")),
+        Value::String(s) => s
+            .parse::<f64>()
+            .map_err(|e| serde::de::Error::custom(format!("不是有效数字: {e}"))),
+        _ => Err(serde::de::Error::custom("期望数字或数字字符串")),
+    }
+}
 
 pub fn exe_dir() -> &'static PathBuf {
     EXE_DIR.get_or_init(|| {
@@ -47,47 +192,6 @@ fn dir_writable(dir: &std::path::Path) -> bool {
     }
 }
 
-fn default_config() -> Value {
-    let (w, h) = crate::win32::screen_size();
-    json!({
-        "version": APP_VERSION,
-        "theme": "light",
-        "language": "zh-CN",
-        "themeChangeType": "1",
-        "view": "block",
-        "auto_start": false,
-        "use_bg": false,
-        "bg": "",
-        "ms_ef": 0,
-        "ign_update": "",
-        "width": (w as f64 * 0.65) as i64,
-        "height": (h as f64 * 0.4) as i64,
-        "full_screen": true,
-        "fdr": true,
-        "cf_type": "1",
-        "cf_hotkey": "",
-        "corner_size": "2",
-        "out_cf_type": "2",
-        "show_sysApp": false,
-        "scale": 80,
-        "df_dir": "desktop",
-        "df_dir_name": "桌面",
-        "of_s": true,
-        "outPos": "1",
-        "imgpre": true,
-        "bgType": "3",
-        "blur_bg": true,
-        "blur_effect": 30,
-        "dir_order": {},
-        "class_order": [],
-        "ico": {},
-        "dbc_action": "1",
-        "show_hidden_file": false,
-        "custom": {},
-        "screens_winInfo": { "w_pc": 0.65, "h_pc": 0.4, "infos": {} }
-    })
-}
-
 /// 损坏文件留底名：`config.corrupt-bak-20261021-181500.json`
 ///
 /// 同一秒内多次损坏时追加序号，不能覆盖上一次现场。
@@ -109,9 +213,12 @@ fn corrupt_backup_path(path: &Path, stamp: &str) -> PathBuf {
     candidate
 }
 
-fn read_json(path: PathBuf, fallback: Value) -> Value {
+fn read_json<T>(path: PathBuf, fallback: T) -> T
+where
+    T: DeserializeOwned,
+{
     match fs::read_to_string(&path) {
-        Ok(s) => match serde_json::from_str::<Value>(&s) {
+        Ok(s) => match serde_json::from_str::<T>(&s) {
             Ok(v) => v,
             Err(e) => {
                 // 文件损坏时先改名留底，再回退默认值；否则下次写盘会把现场直接覆盖掉
@@ -149,7 +256,7 @@ fn read_json(path: PathBuf, fallback: Value) -> Value {
 }
 
 /// 原子写：先写 .tmp 再 rename，避免写坏导致软件起不来
-pub fn write_json(path: &PathBuf, data: &Value) -> std::io::Result<()> {
+pub fn write_json<T: Serialize + ?Sized>(path: &PathBuf, data: &T) -> std::io::Result<()> {
     let tmp = path.with_extension("json.tmp");
     let text = serde_json::to_string_pretty(data)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
@@ -168,61 +275,44 @@ pub fn init() {
     let dir = exe_dir().clone();
     let path = dir.join("config.json");
     let mut cfg = if path.exists() {
-        read_json(path.clone(), default_config())
+        read_json(path.clone(), Config::default())
     } else {
-        let d = default_config();
+        let d = Config::default();
         let _ = write_json(&path, &d);
         d
     };
-    // 补齐缺失字段（版本升级时的兼容处理）
-    let def = default_config();
-    if let (Some(obj), Some(def_obj)) = (cfg.as_object_mut(), def.as_object()) {
-        for (k, v) in def_obj {
-            if !obj.contains_key(k) {
-                obj.insert(k.clone(), v.clone());
-            }
-        }
-        obj.insert("version".into(), json!(APP_VERSION));
-    }
+    // 版本号以 Cargo.toml 为准，旧配置里的 version 不参与逻辑
+    cfg.version = APP_VERSION.to_string();
     let _ = CONFIG.set(Mutex::new(cfg));
 }
 
-pub fn get() -> Value {
+pub fn get() -> Config {
     CONFIG
         .get()
         .and_then(|m| m.lock().ok())
         .map(|g| g.clone())
-        .unwrap_or_else(default_config)
+        .unwrap_or_else(Config::default)
 }
 
 /// 返回给前端的配置（旧版会剔除 dir_order）
 pub fn get_public() -> Value {
-    let mut c = get();
-    if let Some(o) = c.as_object_mut() {
-        o.remove("dir_order");
-    }
-    c
-}
-
-/// 整体替换配置（用于嵌套修改，如 dir_order）
-pub fn set_all(data: Value) {
-    if let Some(m) = CONFIG.get() {
-        if let Ok(mut g) = m.lock() {
-            *g = data;
-            let _ = write_json(&exe_dir().join("config.json"), &g);
-        }
-    }
-}
-
-pub fn update(part: &str, data: Value) {
-    if let Some(m) = CONFIG.get() {
-        if let Ok(mut g) = m.lock() {
-            if let Some(o) = g.as_object_mut() {
-                o.insert(part.to_string(), data);
+    let cfg = get();
+    match serde_json::to_value(cfg) {
+        Ok(mut v) => {
+            if let Some(o) = v.as_object_mut() {
+                o.remove("dir_order");
             }
-            let _ = write_json(&exe_dir().join("config.json"), &g);
+            v
+        }
+        Err(e) => {
+            crate::log_error("config", format!("序列化公开配置失败: {e}"));
+            json!({})
         }
     }
+}
+
+fn write_config(cfg: &Config) {
+    let _ = write_json(&exe_dir().join("config.json"), cfg);
 }
 
 /// 在锁内完成一次读改写；闭包返回 `true` 才落盘
@@ -231,7 +321,7 @@ pub fn update(part: &str, data: Value) {
 /// 后写的会把先写的覆盖掉。
 pub fn mutate<F>(f: F)
 where
-    F: FnOnce(&mut Value) -> bool,
+    F: FnOnce(&mut Config) -> bool,
 {
     let Some(m) = CONFIG.get() else {
         return;
@@ -240,23 +330,46 @@ where
         return;
     };
     if f(&mut g) {
-        let _ = write_json(&exe_dir().join("config.json"), &g);
+        write_config(&g);
     }
+}
+
+/// 前端按 key 更新单个配置项。
+///
+/// 这里是 JSON 边界：先把类型化配置序列化、插入新值，再反序列化回来。
+/// 这样 `userTheme`、`auto_start_priority` 这类尚未建模的键仍会落进 `extra`。
+pub fn update(part: &str, data: Value) {
+    mutate(|cfg| {
+        let mut value = match serde_json::to_value(&*cfg) {
+            Ok(v) => v,
+            Err(e) => {
+                crate::log_error("config", format!("更新 {} 前序列化失败: {e}", part));
+                return false;
+            }
+        };
+        let Some(o) = value.as_object_mut() else {
+            crate::log_error("config", "配置根节点不是对象，拒绝更新");
+            return false;
+        };
+        o.insert(part.to_string(), data);
+        match serde_json::from_value::<Config>(value) {
+            Ok(next) => {
+                *cfg = next;
+                true
+            }
+            Err(e) => {
+                crate::log_error("config", format!("更新 {} 的类型不匹配: {e}", part));
+                false
+            }
+        }
+    });
 }
 
 /// 原子写入某个目录的排序表
 pub fn set_dir_order(dir_key: &str, order: Vec<String>) {
     mutate(|cfg| {
-        let Some(o) = cfg.as_object_mut() else {
-            return false;
-        };
-        if !o.get("dir_order").map(|v| v.is_object()).unwrap_or(false) {
-            o.insert("dir_order".to_string(), json!({}));
-        }
-        let Some(dm) = o.get_mut("dir_order").and_then(|v| v.as_object_mut()) else {
-            return false;
-        };
-        dm.insert(dir_key.to_string(), json!(order));
+        let values = order.into_iter().map(Value::String).collect();
+        cfg.dir_order.insert(dir_key.to_string(), values);
         true
     });
 }
@@ -265,21 +378,10 @@ pub fn set_dir_order(dir_key: &str, order: Vec<String>) {
 pub fn remove_path_from_orders(file_path: &str) {
     mutate(|cfg| {
         let mut dirty = false;
-        if let Some(orders) = cfg.get_mut("dir_order").and_then(|v| v.as_object_mut()) {
-            for arr in orders.values_mut() {
-                if let Some(a) = arr.as_array_mut() {
-                    let before = a.len();
-                    a.retain(|x| {
-                        let p = x.as_str().map(|s| s.to_string()).or_else(|| {
-                            x.get("filePath")
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string())
-                        });
-                        p.as_deref() != Some(file_path)
-                    });
-                    dirty |= a.len() != before;
-                }
-            }
+        for arr in cfg.dir_order.values_mut() {
+            let before = arr.len();
+            arr.retain(|x| crate::order::item_path(x) != Some(file_path));
+            dirty |= arr.len() != before;
         }
         dirty
     });
@@ -287,23 +389,12 @@ pub fn remove_path_from_orders(file_path: &str) {
 
 /// 原子增删自定义图标映射；`url = None` 表示恢复默认图标
 pub fn set_icon(path: &str, url: Option<&str>) {
-    mutate(|cfg| {
-        let Some(o) = cfg.as_object_mut() else {
-            return false;
-        };
-        if !o.get("ico").map(|v| v.is_object()).unwrap_or(false) {
-            o.insert("ico".to_string(), json!({}));
+    mutate(|cfg| match url {
+        Some(u) => {
+            cfg.ico.insert(path.to_string(), u.to_string());
+            true
         }
-        let Some(map) = o.get_mut("ico").and_then(|v| v.as_object_mut()) else {
-            return false;
-        };
-        match url {
-            Some(u) => {
-                map.insert(path.to_string(), json!(u));
-                true
-            }
-            None => map.remove(path).is_some(),
-        }
+        None => cfg.ico.remove(path).is_some(),
     });
 }
 
@@ -341,11 +432,7 @@ pub fn add_file_to_class(class_name: &str, file_path: &str, display_name: &str) 
     if class_name.is_empty() || class_name == "全部" {
         return;
     }
-    let dir = get()
-        .get("df_dir")
-        .and_then(|v| v.as_str())
-        .unwrap_or("desktop")
-        .to_string();
+    let dir = get().df_dir;
     let mut classes = read_classes();
     if let Some(obj) = classes.as_object_mut() {
         let d = obj.entry(dir).or_insert_with(|| json!({}));
@@ -444,7 +531,7 @@ pub fn merge_desktop_order(dir_key: &str, all: Vec<Value>) -> usize {
         return 0;
     };
 
-    let saved = crate::order::saved_paths(&g, dir_key);
+    let saved = crate::order::saved_paths(&g.dir_order, dir_key);
     let paths: Vec<String> = all
         .iter()
         .filter_map(|item| {
@@ -461,15 +548,14 @@ pub fn merge_desktop_order(dir_key: &str, all: Vec<Value>) -> usize {
     if !changed {
         return 0;
     }
-    if let Some(o) = g.as_object_mut() {
-        if !o.get("dir_order").map(|v| v.is_object()).unwrap_or(false) {
-            o.insert("dir_order".to_string(), json!({}));
-        }
-        if let Some(dm) = o.get_mut("dir_order").and_then(|v| v.as_object_mut()) {
-            dm.insert(dir_key.to_string(), json!(result));
-        }
-    }
-    let _ = write_json(&exe_dir().join("config.json"), &g);
+    g.dir_order.insert(
+        dir_key.to_string(),
+        result
+            .iter()
+            .map(|p| Value::String(p.clone()))
+            .collect::<Vec<_>>(),
+    );
+    write_config(&g);
     result.len()
 }
 
@@ -489,18 +575,55 @@ pub fn write_groups(data: &Value) {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use std::path::Path;
 
     #[test]
     fn default_config_uses_package_version() {
-        let cfg = super::default_config();
-        assert_eq!(cfg["version"], super::APP_VERSION);
+        let cfg = Config::default();
+        assert_eq!(cfg.version, APP_VERSION);
     }
 
     #[test]
     fn corrupt_backup_keeps_json_extension_and_timestamp() {
-        let p = super::corrupt_backup_path(Path::new("C:/ed/config.json"), "20261021-181500");
+        let p = corrupt_backup_path(Path::new("C:/ed/config.json"), "20261021-181500");
         let name = p.file_name().unwrap().to_string_lossy();
         assert_eq!(name, "config.corrupt-bak-20261021-181500.json");
+    }
+
+    #[test]
+    fn missing_scale_falls_back_to_default() {
+        let cfg: super::Config = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert_eq!(cfg.scale, 80.0);
+    }
+
+    #[test]
+    fn config_keeps_unknown_keys_and_accepts_string_scale() {
+        let cfg: Config = serde_json::from_value(json!({
+            "scale": "80",
+            "show_sysApp": true,
+            "auto_start_priority": true,
+            "userTheme": { "primary": "#fff" },
+            "dir_order": { "desktop": ["a", { "filePath": "b" }, 1, null] }
+        }))
+        .unwrap();
+        assert_eq!(cfg.scale, 80.0);
+        assert!(cfg.show_sys_app);
+        assert_eq!(cfg.extra.get("auto_start_priority"), Some(&json!(true)));
+        assert!(cfg.extra.get("userTheme").is_some());
+        assert_eq!(cfg.dir_order["desktop"].len(), 4);
+    }
+
+    #[test]
+    fn public_config_hides_dir_order_but_keeps_extra() {
+        let cfg: Config = serde_json::from_value(json!({
+            "dir_order": { "desktop": ["a"] },
+            "auto_start_priority": false
+        }))
+        .unwrap();
+        let mut v = serde_json::to_value(cfg).unwrap();
+        v.as_object_mut().unwrap().remove("dir_order");
+        assert!(v.get("dir_order").is_none());
+        assert_eq!(v.get("auto_start_priority"), Some(&json!(false)));
     }
 }

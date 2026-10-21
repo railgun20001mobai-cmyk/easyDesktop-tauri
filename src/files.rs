@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::config;
+use crate::config::{self, Config};
 use crate::win32;
 
 pub fn desktop_paths() -> Vec<PathBuf> {
@@ -43,7 +43,7 @@ fn icon_for(ext: &str, is_dir: bool) -> String {
 /// 构造单个条目，返回 (类别, 条目)
 ///
 /// `cfg` 由调用方读一次传进来：扫描上百个图标时不能每个文件都克隆整份配置。
-fn build_item(path: &Path, is_dir: bool, cfg: &Value) -> (&'static str, Value) {
+fn build_item(path: &Path, is_dir: bool, cfg: &Config) -> (&'static str, Value) {
     let file_name_full = path
         .file_name()
         .map(|s| s.to_string_lossy().to_string())
@@ -88,11 +88,7 @@ fn build_item(path: &Path, is_dir: bool, cfg: &Value) -> (&'static str, Value) {
 
     // 图标优先级：自定义图标 > 进程内提取的真实图标 > 静态占位图标
     let path_str = path.to_string_lossy().to_string();
-    let custom = cfg
-        .get("ico")
-        .and_then(|m| m.get(&path_str))
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
+    let custom = cfg.ico.get(&path_str).cloned();
     let has_custom = custom.is_some();
     let ico = match custom {
         Some(c) => c,
@@ -263,7 +259,7 @@ pub fn sys_items() -> Vec<Value> {
 pub fn scan(
     dir_keys: &[PathBuf],
     show_hidden: bool,
-    cfg: &Value,
+    cfg: &Config,
 ) -> (Vec<Value>, Vec<Value>, Vec<Value>) {
     let mut exes = Vec::new();
     let mut dirs = Vec::new();
@@ -306,20 +302,12 @@ pub struct ScannedView {
 /// 扫描一个视图（根目录或普通目录），并完成根目录特有的伪条目与已编组过滤
 ///
 /// `api::get_fileinfo` 与启动时的顺序刷新共用这一份逻辑，避免两处各写一套后漂移。
-pub fn scan_view(cfg: &Value, dirs: &[PathBuf], is_root: bool) -> ScannedView {
-    let show_hidden = cfg
-        .get("show_hidden_file")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    let (mut exes, mut dirs, mut files) = scan(dirs, show_hidden, cfg);
+pub fn scan_view(cfg: &Config, dirs: &[PathBuf], is_root: bool) -> ScannedView {
+    let (mut exes, mut dirs, mut files) = scan(dirs, cfg.show_hidden_file, cfg);
 
     let mut extra = Vec::new();
     if is_root {
-        if cfg
-            .get("show_sysApp")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false)
-        {
+        if cfg.show_sys_app {
             extra.extend(sys_items());
         }
         extra.extend(group_items());
@@ -421,7 +409,7 @@ pub fn order_items(
 
     // 自定义排序（dir_order）：与启动时的顺序合并共用 order::merge_order
     let cfg = config::get();
-    let saved = crate::order::saved_paths(&cfg, dir_key);
+    let saved = crate::order::saved_paths(&cfg.dir_order, dir_key);
     let paths: Vec<String> = all
         .iter()
         .filter_map(|x| x.get("filePath").and_then(|v| v.as_str()).map(|s| s.to_string()))

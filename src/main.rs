@@ -51,10 +51,7 @@ pub static FIT_MODE: AtomicBool = AtomicBool::new(false);
 
 /// 设置里的"防打扰"：有全屏程序时不触发面板
 fn trigger_blocked() -> bool {
-    let fdr = config::get()
-        .get("fdr")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(true);
+    let fdr = config::get().fdr;
     fdr && win32::foreground_is_fullscreen()
 }
 
@@ -129,47 +126,26 @@ fn now_ms() -> u64 {
 }
 
 fn out_cf_type() -> String {
-    config::get()
-        .get("out_cf_type")
-        .and_then(|v| v.as_str())
-        .unwrap_or("2")
-        .to_string()
+    config::get().out_cf_type
 }
 
 fn out_pos() -> String {
-    config::get()
-        .get("outPos")
-        .and_then(|v| v.as_str())
-        .unwrap_or("1")
-        .to_string()
+    config::get().out_pos
 }
 
 /// 面板最终位置与尺寸（与旧版 tool.get_targetPos 公式一致）
 fn target_rect() -> (i32, i32, u32, u32) {
     let cfg = config::get();
     let (sw, sh) = win32::screen_size();
-    let full = cfg
-        .get("full_screen")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(true);
+    let full = cfg.full_screen;
     let (wid, hei) = if full {
         (sw, sh)
     } else {
         // 旧版按「分辨率 缩放%」记忆面板尺寸（由"调整尺寸"保存），优先用记忆值
         let key = format!("{}x{} {}%", sw, sh, win32::screen_scale_percent());
-        let saved = cfg
-            .get("screens_winInfo")
-            .and_then(|v| v.get("infos"))
-            .and_then(|v| v.get(&key));
-        match saved {
-            Some(v) => (
-                v.get("w").and_then(|x| x.as_i64()).unwrap_or(1664) as i32,
-                v.get("h").and_then(|x| x.as_i64()).unwrap_or(640) as i32,
-            ),
-            None => (
-                cfg.get("width").and_then(|v| v.as_i64()).unwrap_or(1664) as i32,
-                cfg.get("height").and_then(|v| v.as_i64()).unwrap_or(640) as i32,
-            ),
+        match cfg.screens_win_info.infos.get(&key) {
+            Some(info) => (info.w as i32, info.h as i32),
+            None => (cfg.width as i32, cfg.height as i32),
         }
     };
 
@@ -179,20 +155,12 @@ fn target_rect() -> (i32, i32, u32, u32) {
         // 调整尺寸时拖左/上边缘会移动窗口，这里优先用记忆的位置
         // （只有记忆时的"呼出位置"和当前一致才用，用户改了呼出位置就重新锚定）
         let key = format!("{}x{} {}%", sw, sh, win32::screen_scale_percent());
-        let saved = cfg
-            .get("screens_winInfo")
-            .and_then(|v| v.get("infos"))
-            .and_then(|v| v.get(&key));
-        let saved_pos = saved.and_then(|v| {
-            let sx = v.get("x").and_then(|x| x.as_i64())?;
-            let sy = v.get("y").and_then(|x| x.as_i64())?;
-            let sp = v.get("outPos").and_then(|x| x.as_str()).unwrap_or("");
-            if sp == out_pos() {
-                Some((sx as i32, sy as i32))
-            } else {
-                None
-            }
-        });
+        let current_pos = out_pos();
+        let saved_pos = cfg
+            .screens_win_info
+            .infos
+            .get(&key)
+            .and_then(|info| (info.out_pos == current_pos).then_some((info.x as i32, info.y as i32)));
         match saved_pos {
             Some((sx, sy)) => (
                 sx.clamp(0, (sw - wid).max(0)),
@@ -237,33 +205,25 @@ pub fn save_panel_size(w: u32, h: u32, x: i32, y: i32) {
         return;
     }
     let key = format!("{}x{} {}%", sw, sh, win32::screen_scale_percent());
-    let mut cfg = config::get();
-    if let Some(o) = cfg.as_object_mut() {
-        o.insert("width".into(), serde_json::json!(w));
-        o.insert("height".into(), serde_json::json!(h));
-        let info = o
-            .entry("screens_winInfo")
-            .or_insert_with(|| serde_json::json!({}));
-        if let Some(io) = info.as_object_mut() {
-            io.insert("w_pc".into(), serde_json::json!(w as f64 / sw as f64));
-            io.insert("h_pc".into(), serde_json::json!(h as f64 / sh as f64));
-            let infos = io.entry("infos").or_insert_with(|| serde_json::json!({}));
-            if let Some(map) = infos.as_object_mut() {
-                // outPos 记录下来：用户改了"呼出位置"就忽略这次记忆的坐标
-                map.insert(
-                    key,
-                    serde_json::json!({
-                        "w": w,
-                        "h": h,
-                        "x": x,
-                        "y": y,
-                        "outPos": out_pos(),
-                    }),
-                );
-            }
-        }
-    }
-    config::set_all(cfg);
+    // mutate 持锁期间不能再调 config::get()（会死锁），先把 outPos 取出来
+    let current_pos = out_pos();
+    config::mutate(|cfg| {
+        cfg.width = w as i64;
+        cfg.height = h as i64;
+        cfg.screens_win_info.w_pc = w as f64 / sw as f64;
+        cfg.screens_win_info.h_pc = h as f64 / sh as f64;
+        cfg.screens_win_info.infos.insert(
+            key,
+            config::ScreenInfo {
+                w: w as i64,
+                h: h as i64,
+                x: x as i64,
+                y: y as i64,
+                out_pos: current_pos,
+            },
+        );
+        true
+    });
 }
 
 /// 让面板立刻按当前配置重排（全屏模式/呼出位置等改了要即时生效）
@@ -302,11 +262,7 @@ fn slide_from() -> (i32, i32) {
 /// 严格/中等/宽松 = (区域边长像素, 需要停留的毫秒数)。区域非常小（10 像素级），
 /// 之前按屏幕 6% 算是错的，会让鼠标路过左下角就误触。
 fn corner_size_cfg() -> (i32, u64) {
-    match config::get()
-        .get("corner_size")
-        .and_then(|v| v.as_str())
-        .unwrap_or("2")
-    {
+    match config::get().corner_size.as_str() {
         "1" => (1, 300),
         "3" => (25, 0),
         _ => (10, 100),
@@ -488,11 +444,7 @@ pub fn set_logon_task(app: &tauri::AppHandle, on: bool) {
         log(&format!("logon task create = {}", ok));
     } else {
         let ok = schtasks(&["/delete", "/f", "/tn", LOGON_TASK]);
-        if config::get()
-            .get("auto_start")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false)
-        {
+        if config::get().auto_start {
             let _ = app.autolaunch().enable();
         }
         log(&format!("logon task delete = {}", ok));
@@ -745,11 +697,11 @@ fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
 /// 顺带把新条目的图标提出来（build_item 里会做），呼出时就不用现算图标了。
 pub fn refresh_desktop_order_on_start() {
     let cfg = config::get();
-    let key = cfg
-        .get("df_dir")
-        .and_then(|v| v.as_str())
-        .unwrap_or("desktop")
-        .to_string();
+    let key = if cfg.df_dir.is_empty() {
+        "desktop".to_string()
+    } else {
+        cfg.df_dir.clone()
+    };
     let dirs = if key.is_empty() || key == "desktop" {
         crate::files::desktop_paths()
     } else {
@@ -792,11 +744,7 @@ fn start_corner_watcher(handle: tauri::AppHandle) {
             // 只有「鼠标移到指定位置」模式才检测热区；
             // 2/3/4 = win+shift / win+esc / 自定义热键，靠全局热键呼出，
             // 否则鼠标划到左下角（比如去点开始菜单）会莫名其妙弹出面板。
-            let corner_mode = config::get()
-                .get("cf_type")
-                .and_then(|v| v.as_str())
-                .unwrap_or("1")
-                == "1";
+            let corner_mode = config::get().cf_type == "1";
             if !corner_mode {
                 CORNER_ENTER.store(0, Ordering::SeqCst);
                 continue;
@@ -983,8 +931,8 @@ fn register_hotkey(app: &tauri::AppHandle) {
     use std::str::FromStr;
 
     let cfg = config::get();
-    let cf_type = cfg.get("cf_type").and_then(|v| v.as_str()).unwrap_or("1").to_string();
-    let custom = cfg.get("cf_hotkey").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let cf_type = cfg.cf_type.clone();
+    let custom = cfg.cf_hotkey.clone();
 
     let spec = match cf_type.as_str() {
         "2" => Some("Super+Shift".to_string()),

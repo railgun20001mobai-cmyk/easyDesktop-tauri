@@ -27,11 +27,12 @@ fn s(args: &[Value], i: usize) -> String {
 /// 默认目录的键：桌面时是 "desktop"，自定义时是该目录的绝对路径
 /// （与旧版一致：dir_order / user_class.json 都按这个键分组）
 fn root_key() -> String {
-    crate::config::get()
-        .get("df_dir")
-        .and_then(|v| v.as_str())
-        .unwrap_or("desktop")
-        .to_string()
+    let key = crate::config::get().df_dir;
+    if key.is_empty() {
+        "desktop".to_string()
+    } else {
+        key
+    }
 }
 
 fn is_root(p: &str) -> bool {
@@ -273,22 +274,14 @@ fn dispatch(method: &str, args: &[Value], app: &tauri::AppHandle) -> Value {
         "open_file" => {
             crate::win32::shell_open(&s(args, 0));
             // 设置里的"打开文件后收起窗口"
-            if crate::config::get()
-                .get("of_s")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(true)
-            {
+            if crate::config::get().of_s {
                 crate::hide_panel_now(app);
             }
             json!({ "success": true })
         }
         "show_file" => {
             crate::win32::shell_show_in_explorer(&s(args, 0));
-            if crate::config::get()
-                .get("of_s")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(true)
-            {
+            if crate::config::get().of_s {
                 crate::hide_panel_now(app);
             }
             json!({ "success": true })
@@ -394,18 +387,15 @@ fn dispatch(method: &str, args: &[Value], app: &tauri::AppHandle) -> Value {
         "read_class" => {
             let key = s(args, 0);
             let classes = crate::config::read_classes();
-            let dir = crate::config::get()
-                .get("df_dir")
-                .and_then(|v| v.as_str())
-                .unwrap_or("desktop")
-                .to_string();
+            let cfg = crate::config::get();
+            let dir = if cfg.df_dir.is_empty() {
+                "desktop".to_string()
+            } else {
+                cfg.df_dir.clone()
+            };
 
             if key.is_empty() || key == "all" || key == "全部" {
-                let mut order: Vec<String> = crate::config::get()
-                    .get("class_order")
-                    .and_then(|v| v.as_array())
-                    .map(|a| a.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect())
-                    .unwrap_or_default();
+                let mut order = cfg.class_order.clone();
                 let map = classes.get(&dir).cloned().unwrap_or_else(|| json!({}));
                 if order.is_empty() {
                     if let Some(o) = map.as_object() {
@@ -441,11 +431,10 @@ fn dispatch(method: &str, args: &[Value], app: &tauri::AppHandle) -> Value {
         "add_class" => {
             let files_v = args.get(0).cloned().unwrap_or(json!([]));
             let key = s(args, 1);
-            let dir = crate::config::get()
-                .get("df_dir")
-                .and_then(|v| v.as_str())
-                .unwrap_or("desktop")
-                .to_string();
+            let dir = {
+                let df = crate::config::get().df_dir;
+                if df.is_empty() { "desktop".to_string() } else { df }
+            };
             let mut classes = crate::config::read_classes();
             if let Some(obj) = classes.as_object_mut() {
                 let d = obj.entry(dir).or_insert_with(|| json!({}));
@@ -455,15 +444,7 @@ fn dispatch(method: &str, args: &[Value], app: &tauri::AppHandle) -> Value {
             }
             crate::config::write_classes(&classes);
             // 新分类（含改名后产生的新名字）要进 class_order，否则会被 read_class 过滤掉
-            let mut order: Vec<String> = crate::config::get()
-                .get("class_order")
-                .and_then(|v| v.as_array())
-                .map(|a| {
-                    a.iter()
-                        .filter_map(|x| x.as_str().map(|s| s.to_string()))
-                        .collect()
-                })
-                .unwrap_or_default();
+            let mut order = crate::config::get().class_order;
             if !order.is_empty() && !order.iter().any(|x| x == &key) {
                 order.push(key.clone());
                 crate::config::update("class_order", json!(order));
@@ -472,11 +453,10 @@ fn dispatch(method: &str, args: &[Value], app: &tauri::AppHandle) -> Value {
         }
         "remove_class" => {
             let key = s(args, 0);
-            let dir = crate::config::get()
-                .get("df_dir")
-                .and_then(|v| v.as_str())
-                .unwrap_or("desktop")
-                .to_string();
+            let dir = {
+                let df = crate::config::get().df_dir;
+                if df.is_empty() { "desktop".to_string() } else { df }
+            };
             let mut classes = crate::config::read_classes();
             if let Some(obj) = classes.as_object_mut() {
                 if let Some(d) = obj.get_mut(&dir).and_then(|v| v.as_object_mut()) {
@@ -486,15 +466,7 @@ fn dispatch(method: &str, args: &[Value], app: &tauri::AppHandle) -> Value {
             crate::config::write_classes(&classes);
             // 同步摘掉 class_order 里的旧名字（改名 = remove_class + add_class，
             // 不清理的话这里会积累一堆指向已不存在分类的幽灵项）
-            let mut order: Vec<String> = crate::config::get()
-                .get("class_order")
-                .and_then(|v| v.as_array())
-                .map(|a| {
-                    a.iter()
-                        .filter_map(|x| x.as_str().map(|s| s.to_string()))
-                        .collect()
-                })
-                .unwrap_or_default();
+            let mut order = crate::config::get().class_order;
             let before = order.len();
             order.retain(|x| x != &key);
             if order.len() != before {
@@ -544,11 +516,7 @@ fn dispatch(method: &str, args: &[Value], app: &tauri::AppHandle) -> Value {
         }
         "close_fullscreen_window" => {
             // 只在全屏模式下才允许"点空白处收起"，普通模式点空白不关面板
-            let full = crate::config::get()
-                .get("full_screen")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-            if full {
+            if crate::config::get().full_screen {
                 crate::hide_panel_now(app);
             }
             Value::Null
@@ -802,10 +770,7 @@ fn dispatch(method: &str, args: &[Value], app: &tauri::AppHandle) -> Value {
             Value::Null
         }
         "load_blur_effect" => {
-            let on = crate::config::get()
-                .get("blur_bg")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(true);
+            let on = crate::config::get().blur_bg;
             // 前端传的 b_type：'Acrylic'=浅色主题、'Aero'=深色主题（沿用旧版叫法）
             let dark = args.get(0).and_then(|v| v.as_str()).map(|s| s != "Acrylic").unwrap_or(false);
             apply_blur(app, on, dark);
@@ -993,10 +958,7 @@ pub fn apply_blur(app: &tauri::AppHandle, on: bool, dark: bool) {
                 // 也就是：强度 100% → alpha 155（最透、最磨）；强度 0% → alpha 255（纯白、不磨）。
                 // 旧版把这个 alpha 拼成 GradientColor 交给系统的 SetWindowCompositionAttribute，
                 // 这里换成 tauri 的 WindowEffectsConfig.color，视觉规则一致。
-                let be = crate::config::get()
-                    .get("blur_effect")
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(30);
+                let be = crate::config::get().blur_effect;
                 let alpha = (155i64 + be.clamp(0, 100)) as u8;
                 Some(WindowEffectsConfig {
                     effects: vec![WindowEffect::Acrylic],
