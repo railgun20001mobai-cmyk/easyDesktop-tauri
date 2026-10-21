@@ -41,7 +41,9 @@ fn icon_for(ext: &str, is_dir: bool) -> String {
 }
 
 /// 构造单个条目，返回 (类别, 条目)
-fn build_item(path: &Path, is_dir: bool) -> (&'static str, Value) {
+///
+/// `cfg` 由调用方读一次传进来：扫描上百个图标时不能每个文件都克隆整份配置。
+fn build_item(path: &Path, is_dir: bool, cfg: &Value) -> (&'static str, Value) {
     let file_name_full = path
         .file_name()
         .map(|s| s.to_string_lossy().to_string())
@@ -86,13 +88,11 @@ fn build_item(path: &Path, is_dir: bool) -> (&'static str, Value) {
 
     // 图标优先级：自定义图标 > 进程内提取的真实图标 > 静态占位图标
     let path_str = path.to_string_lossy().to_string();
-    let custom = {
-        let cfg = config::get();
-        cfg.get("ico")
-            .and_then(|m| m.get(&path_str))
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
-    };
+    let custom = cfg
+        .get("ico")
+        .and_then(|m| m.get(&path_str))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
     let has_custom = custom.is_some();
     let ico = match custom {
         Some(c) => c,
@@ -156,7 +156,8 @@ fn build_item(path: &Path, is_dir: bool) -> (&'static str, Value) {
 /// 否则组视图里会因 cl 缺失把星标画成「已标星」。
 pub fn item_for_path(path_str: &str) -> Value {
     let p = Path::new(path_str);
-    let (_, mut item) = build_item(p, p.is_dir());
+    let cfg = config::get();
+    let (_, mut item) = build_item(p, p.is_dir(), &cfg);
     if let Some(o) = item.as_object_mut() {
         let star = config::read_cl()
             .get(path_str)
@@ -259,7 +260,11 @@ pub fn sys_items() -> Vec<Value> {
 }
 
 /// 扫描目录，返回 (exe, dir, file) 三组
-pub fn scan(dir_keys: &[PathBuf], show_hidden: bool) -> (Vec<Value>, Vec<Value>, Vec<Value>) {
+pub fn scan(
+    dir_keys: &[PathBuf],
+    show_hidden: bool,
+    cfg: &Value,
+) -> (Vec<Value>, Vec<Value>, Vec<Value>) {
     let mut exes = Vec::new();
     let mut dirs = Vec::new();
     let mut files = Vec::new();
@@ -279,7 +284,7 @@ pub fn scan(dir_keys: &[PathBuf], show_hidden: bool) -> (Vec<Value>, Vec<Value>,
                 continue;
             }
             let is_dir = p.is_dir();
-            let (kind, item) = build_item(&p, is_dir);
+            let (kind, item) = build_item(&p, is_dir, cfg);
             match kind {
                 "exe" => exes.push(item),
                 "dir" => dirs.push(item),
@@ -288,6 +293,58 @@ pub fn scan(dir_keys: &[PathBuf], show_hidden: bool) -> (Vec<Value>, Vec<Value>,
         }
     }
     (exes, dirs, files)
+}
+
+/// 一次扫描的结果：文件三组 + 根目录的伪条目（系统项 / 应用组）
+pub struct ScannedView {
+    pub exes: Vec<Value>,
+    pub dirs: Vec<Value>,
+    pub files: Vec<Value>,
+    pub extra: Vec<Value>,
+}
+
+/// 扫描一个视图（根目录或普通目录），并完成根目录特有的伪条目与已编组过滤
+///
+/// `api::get_fileinfo` 与启动时的顺序刷新共用这一份逻辑，避免两处各写一套后漂移。
+pub fn scan_view(cfg: &Value, dirs: &[PathBuf], is_root: bool) -> ScannedView {
+    let show_hidden = cfg
+        .get("show_hidden_file")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let (mut exes, mut dirs, mut files) = scan(dirs, show_hidden, cfg);
+
+    let mut extra = Vec::new();
+    if is_root {
+        if cfg
+            .get("show_sysApp")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
+            extra.extend(sys_items());
+        }
+        extra.extend(group_items());
+
+        // 旧版行为：已加入应用组的文件从主视图隐藏（否则和组内图标重复）
+        let grouped = grouped_paths();
+        if !grouped.is_empty() {
+            let keep = |v: &Value| {
+                !v.get("filePath")
+                    .and_then(|x| x.as_str())
+                    .map(|p| grouped.contains(p))
+                    .unwrap_or(false)
+            };
+            exes.retain(keep);
+            dirs.retain(keep);
+            files.retain(keep);
+        }
+    }
+
+    ScannedView {
+        exes,
+        dirs,
+        files,
+        extra,
+    }
 }
 
 /// 复制文件/文件夹到目标目录，重名时加 " - 副本" 后缀，返回新路径
@@ -362,44 +419,30 @@ pub fn order_items(
     all.extend(dirs);
     all.extend(files);
 
-    // 自定义排序（dir_order）
+    // 自定义排序（dir_order）：与启动时的顺序合并共用 order::merge_order
     let cfg = config::get();
-    let saved: Vec<String> = cfg
-        .get("dir_order")
-        .and_then(|d| d.get(dir_key))
-        .and_then(|v| v.as_array())
-        .map(|a| {
-            a.iter()
-                .filter_map(|x| {
-                    x.as_str()
-                        .map(|s| s.to_string())
-                        .or_else(|| x.get("filePath").and_then(|v| v.as_str()).map(|s| s.to_string()))
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-
-    let mut result: Vec<Value> = Vec::new();
-    if !saved.is_empty() {
-        let natural_len = all.len().max(1);
-        // 先按保存顺序取已存在的
-        for sp in &saved {
-            if let Some(pos) = all.iter().position(|x| x.get("filePath").and_then(|v| v.as_str()) == Some(sp)) {
-                result.push(all.remove(pos));
-            }
-        }
-        // 新增项插回：旧版 merge_lists 的 new_items 用的是「项在全新列表 a 里的下标 i」，
-        // 插入位置 = int((i/len(a)) * len(a)) = i，即按它在 all 里的下标插回。
-        // 组伪条目在 all 最前 → 新组落在列表最前；新增的桌面文件也不会跑到首位。
-        let remain = all;
-        for (i, item) in remain.into_iter().enumerate() {
-            let pos = i.min(result.len());
-            result.insert(pos, item);
-        }
-        let _ = natural_len;
+    let saved = crate::order::saved_paths(&cfg, dir_key);
+    let paths: Vec<String> = all
+        .iter()
+        .filter_map(|x| x.get("filePath").and_then(|v| v.as_str()).map(|s| s.to_string()))
+        .collect();
+    let ordered = if saved.is_empty() {
+        paths
     } else {
-        result = all;
+        crate::order::merge_order(&saved, &paths)
+    };
+
+    let mut result: Vec<Value> = Vec::with_capacity(all.len());
+    for path in &ordered {
+        if let Some(pos) = all
+            .iter()
+            .position(|x| x.get("filePath").and_then(|v| v.as_str()) == Some(path.as_str()))
+        {
+            result.push(all.remove(pos));
+        }
     }
+    // 没有 filePath 的异常条目也保留，不能因为排序把它们吞掉
+    result.extend(all);
 
     // 标星置顶
     let cl = config::read_cl();

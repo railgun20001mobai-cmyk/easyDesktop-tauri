@@ -4,6 +4,7 @@ mod api;
 mod config;
 mod files;
 mod icons;
+mod order;
 mod preview;
 mod webview_mem;
 mod win32;
@@ -733,7 +734,8 @@ fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
 /// 扫描 → 与已保存顺序合并 → 有变化才写回 dir_order。
 /// 顺带把新条目的图标提出来（build_item 里会做），呼出时就不用现算图标了。
 pub fn refresh_desktop_order_on_start() {
-    let key = config::get()
+    let cfg = config::get();
+    let key = cfg
         .get("df_dir")
         .and_then(|v| v.as_str())
         .unwrap_or("desktop")
@@ -743,42 +745,13 @@ pub fn refresh_desktop_order_on_start() {
     } else {
         vec![std::path::PathBuf::from(&key)]
     };
-    let show_hidden = config::get()
-        .get("show_hidden_file")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    let (exes, dirs_items, files) = crate::files::scan(&dirs, show_hidden);
+    // 与面板共用同一套扫描/过滤逻辑：伪条目也算进顺序，已编组文件不参与
+    let view = crate::files::scan_view(&cfg, &dirs, true);
+    let mut all: Vec<serde_json::Value> = view.extra;
+    all.extend(view.exes);
+    all.extend(view.dirs);
+    all.extend(view.files);
 
-    // 伪条目（系统项 + 应用组）也算进顺序，否则会被当成"已失效"剔除
-    let mut extra: Vec<serde_json::Value> = Vec::new();
-    if config::get()
-        .get("show_sysApp")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false)
-    {
-        extra.extend(crate::files::sys_items());
-    }
-    extra.extend(crate::files::group_items());
-
-    // 已被收进应用组的文件不在主视图里，顺序里也不该有
-    let grouped = crate::files::grouped_paths();
-    let keep = move |v: &serde_json::Value| {
-        !v.get("filePath")
-            .and_then(|x| x.as_str())
-            .map(|p| grouped.contains(p))
-            .unwrap_or(false)
-    };
-    let (exes, dirs_items, files) = (
-        exes.into_iter().filter(|v| keep(v)).collect::<Vec<_>>(),
-        dirs_items.into_iter().filter(|v| keep(v)).collect::<Vec<_>>(),
-        files.into_iter().filter(|v| keep(v)).collect::<Vec<_>>(),
-    );
-
-    let mut all: Vec<serde_json::Value> = Vec::new();
-    all.extend(extra);
-    all.extend(exes);
-    all.extend(dirs_items);
-    all.extend(files);
     let n = config::merge_desktop_order(&key, all);
     if n > 0 {
         log(&format!("startup scan: dir_order 已更新，共 {} 项", n));

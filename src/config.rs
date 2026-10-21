@@ -8,6 +8,9 @@ use std::sync::{Mutex, OnceLock};
 static CONFIG: OnceLock<Mutex<Value>> = OnceLock::new();
 static EXE_DIR: OnceLock<PathBuf> = OnceLock::new();
 
+/// 唯一版本来源：`Cargo.toml` 的 `version`。运行时/配置里的版本都从这里取，避免多处手改漂移。
+pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 pub fn exe_dir() -> &'static PathBuf {
     EXE_DIR.get_or_init(|| {
         let dir = std::env::current_exe()
@@ -47,7 +50,7 @@ fn dir_writable(dir: &std::path::Path) -> bool {
 fn default_config() -> Value {
     let (w, h) = crate::win32::screen_size();
     json!({
-        "version": "1.1.7",
+        "version": APP_VERSION,
         "theme": "light",
         "language": "zh-CN",
         "themeChangeType": "1",
@@ -102,7 +105,9 @@ fn read_json(path: PathBuf, fallback: Value) -> Value {
 /// 原子写：先写 .tmp 再 rename，避免写坏导致软件起不来
 pub fn write_json(path: &PathBuf, data: &Value) -> std::io::Result<()> {
     let tmp = path.with_extension("json.tmp");
-    fs::write(&tmp, serde_json::to_string_pretty(data).unwrap_or_default())?;
+    let text = serde_json::to_string_pretty(data)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    fs::write(&tmp, text)?;
     fs::rename(&tmp, path)?;
     Ok(())
 }
@@ -125,7 +130,7 @@ pub fn init() {
                 obj.insert(k.clone(), v.clone());
             }
         }
-        obj.insert("version".into(), json!("1.1.3"));
+        obj.insert("version".into(), json!(APP_VERSION));
     }
     let _ = CONFIG.set(Mutex::new(cfg));
 }
@@ -166,6 +171,88 @@ pub fn update(part: &str, data: Value) {
             let _ = write_json(&exe_dir().join("config.json"), &g);
         }
     }
+}
+
+/// 在锁内完成一次读改写；闭包返回 `true` 才落盘
+///
+/// 避免「先 get() 克隆整份配置、改完再 set_all()」：两步之间别的调用插进来，
+/// 后写的会把先写的覆盖掉。
+pub fn mutate<F>(f: F)
+where
+    F: FnOnce(&mut Value) -> bool,
+{
+    let Some(m) = CONFIG.get() else {
+        return;
+    };
+    let Ok(mut g) = m.lock() else {
+        return;
+    };
+    if f(&mut g) {
+        let _ = write_json(&exe_dir().join("config.json"), &g);
+    }
+}
+
+/// 原子写入某个目录的排序表
+pub fn set_dir_order(dir_key: &str, order: Vec<String>) {
+    mutate(|cfg| {
+        let Some(o) = cfg.as_object_mut() else {
+            return false;
+        };
+        if !o.get("dir_order").map(|v| v.is_object()).unwrap_or(false) {
+            o.insert("dir_order".to_string(), json!({}));
+        }
+        let Some(dm) = o.get_mut("dir_order").and_then(|v| v.as_object_mut()) else {
+            return false;
+        };
+        dm.insert(dir_key.to_string(), json!(order));
+        true
+    });
+}
+
+/// 从所有目录的排序表里摘掉某个路径（删除应用组等场景）
+pub fn remove_path_from_orders(file_path: &str) {
+    mutate(|cfg| {
+        let mut dirty = false;
+        if let Some(orders) = cfg.get_mut("dir_order").and_then(|v| v.as_object_mut()) {
+            for arr in orders.values_mut() {
+                if let Some(a) = arr.as_array_mut() {
+                    let before = a.len();
+                    a.retain(|x| {
+                        let p = x.as_str().map(|s| s.to_string()).or_else(|| {
+                            x.get("filePath")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string())
+                        });
+                        p.as_deref() != Some(file_path)
+                    });
+                    dirty |= a.len() != before;
+                }
+            }
+        }
+        dirty
+    });
+}
+
+/// 原子增删自定义图标映射；`url = None` 表示恢复默认图标
+pub fn set_icon(path: &str, url: Option<&str>) {
+    mutate(|cfg| {
+        let Some(o) = cfg.as_object_mut() else {
+            return false;
+        };
+        if !o.get("ico").map(|v| v.is_object()).unwrap_or(false) {
+            o.insert("ico".to_string(), json!({}));
+        }
+        let Some(map) = o.get_mut("ico").and_then(|v| v.as_object_mut()) else {
+            return false;
+        };
+        match url {
+            Some(u) => {
+                map.insert(path.to_string(), json!(u));
+                true
+            }
+            None => map.remove(path).is_some(),
+        }
+    });
 }
 
 // ===== 分类 =====
@@ -305,46 +392,16 @@ pub fn merge_desktop_order(dir_key: &str, all: Vec<Value>) -> usize {
         return 0;
     };
 
-    let saved: Vec<String> = g
-        .get("dir_order")
-        .and_then(|d| d.get(dir_key))
-        .and_then(|v| v.as_array())
-        .map(|a| {
-            a.iter()
-                .filter_map(|x| {
-                    x.as_str()
-                        .map(|s| s.to_string())
-                        .or_else(|| x.get("filePath").and_then(|v| v.as_str()).map(|s| s.to_string()))
-                })
-                .collect()
+    let saved = crate::order::saved_paths(&g, dir_key);
+    let paths: Vec<String> = all
+        .iter()
+        .filter_map(|item| {
+            item.get("filePath")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
         })
-        .unwrap_or_default();
-
-    // 扫描结果里每个条目的下标（新增项按它插回，和渲染时 order_items 的规则一致）
-    let mut paths: Vec<String> = Vec::new();
-    for item in &all {
-        if let Some(p) = item.get("filePath").and_then(|v| v.as_str()) {
-            paths.push(p.to_string());
-        }
-    }
-    let exist: std::collections::HashSet<&str> = paths.iter().map(|s| s.as_str()).collect();
-    let saved_set: std::collections::HashSet<&str> = saved.iter().map(|s| s.as_str()).collect();
-
-    // 1) 仍存在的条目按用户保存的顺序排好
-    let mut result: Vec<String> = Vec::new();
-    for sp in &saved {
-        if exist.contains(sp.as_str()) {
-            result.push(sp.clone());
-        }
-    }
-    // 2) 新增条目按它在扫描结果里的下标插回
-    for (i, p) in paths.iter().enumerate() {
-        if saved_set.contains(p.as_str()) {
-            continue;
-        }
-        let pos = i.min(result.len());
-        result.insert(pos, p.clone());
-    }
+        .collect();
+    let result = crate::order::merge_order(&saved, &paths);
 
     // 顺序没变化就不写盘，避免每次启动都改配置
     let changed =
@@ -376,4 +433,13 @@ pub fn read_groups() -> Value {
 
 pub fn write_groups(data: &Value) {
     let _ = write_json(&groups_path(), data);
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn default_config_uses_package_version() {
+        let cfg = super::default_config();
+        assert_eq!(cfg["version"], super::APP_VERSION);
+    }
 }

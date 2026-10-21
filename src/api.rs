@@ -12,7 +12,7 @@ use std::sync::Mutex;
 
 use tauri::Manager;
 
-const VERSION: &str = "1.1.7";
+use crate::config::APP_VERSION;
 
 /// 复制到剪贴板的文件路径（对应旧版的复制/粘贴）
 static CLIPBOARD: Mutex<Option<Vec<String>>> = Mutex::new(None);
@@ -131,9 +131,9 @@ pub fn toggle_window(app: tauri::AppHandle, show: bool) {
 fn dispatch(method: &str, args: &[Value], app: &tauri::AppHandle) -> Value {
     match method {
         // ===== 启动 / 配置 =====
-        "bootstrap" => json!({ "config": config_get_public(), "version": VERSION }),
+        "bootstrap" => json!({ "config": config_get_public(), "version": APP_VERSION }),
         "get_config" => config_get_public(),
-        "get_version" => json!({ "success": true, "version": VERSION }),
+        "get_version" => json!({ "success": true, "version": APP_VERSION }),
         "update_config" => {
             let part = s(args, 0);
             let data = args.get(1).cloned().unwrap_or(Value::Null);
@@ -176,92 +176,45 @@ fn dispatch(method: &str, args: &[Value], app: &tauri::AppHandle) -> Value {
             let path_key = s(args, 0);
             // 前端传回的是完整条目对象数组，这里归一化成 filePath 字符串数组
             // （与旧版 config.json 的 dir_order 格式一致）
-            let order: Vec<Value> = args
+            let order: Vec<String> = args
                 .get(1)
                 .and_then(|v| v.as_array())
                 .map(|a| {
                     a.iter()
                         .filter_map(|x| {
-                            x.as_str()
-                                .map(|s| json!(s))
-                                .or_else(|| x.get("filePath").and_then(|v| v.as_str()).map(|s| json!(s)))
+                            x.as_str().map(|s| s.to_string()).or_else(|| {
+                                x.get("filePath")
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.to_string())
+                            })
                         })
                         .collect()
                 })
                 .unwrap_or_default();
-            let mut cfg = crate::config::get();
-            if let Some(o) = cfg.as_object_mut() {
-                let dir_order = o
-                    .entry("dir_order")
-                    .or_insert_with(|| json!({}))
-                    .as_object_mut()
-                    .unwrap();
-                dir_order.insert(path_key, json!(order));
-            }
-            crate::config::set_all(cfg);
+            crate::config::set_dir_order(&path_key, order);
             Value::Null
         }
 
         // ===== 文件列表 =====
         "get_fileinfo" => {
             let path = s(args, 0);
+            let at_root = is_root(&path);
             let root = root_key();
-            let dir_key = if is_root(&path) { root.as_str() } else { path.as_str() };
-            let cfg = crate::config::get();
-            let show_hidden = cfg
-                .get("show_hidden_file")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-            let dirs = if is_root(&path) {
+            let dir_key = if at_root { root.as_str() } else { path.as_str() };
+            let dirs = if at_root {
                 root_dirs()
             } else {
                 vec![PathBuf::from(&path)]
             };
-            let (mut exes, mut dirs_items, mut files) = crate::files::scan(&dirs, show_hidden);
-            // 根目录下把「应用组 / 系统项」伪条目一并交给排序（可被拖拽排序、可置顶）
-            let extra = if is_root(&path) {
-                let mut v = Vec::new();
-                let cfg = crate::config::get();
-                if cfg
-                    .get("show_sysApp")
-                    .and_then(|x| x.as_bool())
-                    .unwrap_or(false)
-                {
-                    v.extend(crate::files::sys_items());
-                }
-                v.extend(crate::files::group_items());
-                // 旧版行为：已加入应用组的文件从主视图隐藏（否则和组内图标重复）
-                let grouped = crate::files::grouped_paths();
-                if !grouped.is_empty() {
-                    let keep = |v: &serde_json::Value| {
-                        !v.get("filePath")
-                            .and_then(|x| x.as_str())
-                            .map(|p| grouped.contains(p))
-                            .unwrap_or(false)
-                    };
-                    exes.retain(keep);
-                    dirs_items.retain(keep);
-                    files.retain(keep);
-                }
-                v
-            } else {
-                Vec::new()
-            };
-            let extra_n = extra.len();
-            let data = crate::files::order_items(dir_key, exes, dirs_items, files, extra);
-            // 【临时排查】看组伪条目有没有进列表
-            crate::log(&format!(
-                "get_fileinfo path='{}' root={} groups={} extra={} data={} 前3项={:?}",
-                path,
-                is_root(&path),
-                crate::config::read_groups().as_object().map(|m| m.len()).unwrap_or(0),
-                extra_n,
-                data.len(),
-                data.iter()
-                    .take(3)
-                    .map(|v| v.get("filePath").and_then(|x| x.as_str()).unwrap_or(""))
-                    .collect::<Vec<_>>()
-            ));
+            let cfg = crate::config::get();
+            let view = crate::files::scan_view(&cfg, &dirs, at_root);
+            let data = crate::files::order_items(
+                dir_key,
+                view.exes,
+                view.dirs,
+                view.files,
+                view.extra,
+            );
             json!({ "success": true, "data": data, "same": false })
         }
         "get_parent" => {
@@ -705,28 +658,7 @@ fn dispatch(method: &str, args: &[Value], app: &tauri::AppHandle) -> Value {
             let group_path = format!("__group__:{}", gid);
             // 分类里指向这个组的条目也要摘掉（否则分类里留一个幽灵条目、分类设置里还勾着它）
             crate::config::remove_file_from_classes(&group_path);
-            let mut cfg = crate::config::get();
-            let mut dirty = false;
-            if let Some(orders) = cfg.get_mut("dir_order").and_then(|v| v.as_object_mut()) {
-                for (_, arr) in orders.iter_mut() {
-                    if let Some(a) = arr.as_array_mut() {
-                        let before = a.len();
-                        a.retain(|x| {
-                            let p = x
-                                .as_str()
-                                .map(|s| s.to_string())
-                                .or_else(|| x.get("filePath").and_then(|v| v.as_str()).map(|s| s.to_string()));
-                            p.as_deref() != Some(group_path.as_str())
-                        });
-                        if a.len() != before {
-                            dirty = true;
-                        }
-                    }
-                }
-            }
-            if dirty {
-                crate::config::set_all(cfg);
-            }
+            crate::config::remove_path_from_orders(&group_path);
             json!({ "success": true })
         }
         "add_to_group" => {
@@ -975,14 +907,7 @@ fn dispatch(method: &str, args: &[Value], app: &tauri::AppHandle) -> Value {
             let pick_new = args.get(1).and_then(|v| v.as_bool()).unwrap_or(false);
             if !pick_new {
                 // 恢复默认图标：删掉自定义图标映射
-                let mut cfg = crate::config::get();
-                let mut changed = false;
-                if let Some(map) = cfg.get_mut("ico").and_then(|v| v.as_object_mut()) {
-                    changed = map.remove(&path).is_some();
-                }
-                if changed {
-                    crate::config::set_all(cfg);
-                }
+                crate::config::set_icon(&path, None);
                 json!({ "success": true })
             } else {
                 let Some(src) = pick_image_file(app) else {
@@ -990,11 +915,7 @@ fn dispatch(method: &str, args: &[Value], app: &tauri::AppHandle) -> Value {
                 };
                 match crate::icons::import_custom_icon(&src) {
                     Some(url) => {
-                        let mut cfg = crate::config::get();
-                        if let Some(map) = cfg.get_mut("ico").and_then(|v| v.as_object_mut()) {
-                            map.insert(path.clone(), json!(url));
-                        }
-                        crate::config::set_all(cfg);
+                        crate::config::set_icon(&path, Some(&url));
                         json!({ "success": true })
                     }
                     None => json!({ "success": false, "message": "图标处理失败" }),
@@ -1130,4 +1051,33 @@ fn build_pinyin(name: &str) -> (String, String) {
         }
     }
     (py, sx)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_pinyin;
+
+    #[test]
+    fn pinyin_full_and_initials() {
+        assert_eq!(
+            build_pinyin("微信"),
+            ("weixin".to_string(), "wx".to_string())
+        );
+    }
+
+    #[test]
+    fn pinyin_mixed_text_and_digits() {
+        assert_eq!(
+            build_pinyin("PDF阅读"),
+            ("pdfyuedu".to_string(), "pdfyd".to_string())
+        );
+    }
+
+    #[test]
+    fn pinyin_drops_punctuation() {
+        assert_eq!(
+            build_pinyin("A-1_文档"),
+            ("a1wendang".to_string(), "a1wd".to_string())
+        );
+    }
 }
