@@ -2,7 +2,7 @@
 
 use serde_json::{json, Value};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
 static CONFIG: OnceLock<Mutex<Value>> = OnceLock::new();
@@ -88,16 +88,62 @@ fn default_config() -> Value {
     })
 }
 
+/// 损坏文件留底名：`config.corrupt-bak-20261021-181500.json`
+///
+/// 同一秒内多次损坏时追加序号，不能覆盖上一次现场。
+fn corrupt_backup_path(path: &Path, stamp: &str) -> PathBuf {
+    let stem = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "config".to_string());
+    let ext = path
+        .extension()
+        .map(|s| format!(".{}", s.to_string_lossy()))
+        .unwrap_or_default();
+    let mut candidate = path.with_file_name(format!("{}.corrupt-bak-{}{}", stem, stamp, ext));
+    let mut i = 1;
+    while candidate.exists() {
+        candidate = path.with_file_name(format!("{}.corrupt-bak-{}-{}{}", stem, stamp, i, ext));
+        i += 1;
+    }
+    candidate
+}
+
 fn read_json(path: PathBuf, fallback: Value) -> Value {
     match fs::read_to_string(&path) {
         Ok(s) => match serde_json::from_str::<Value>(&s) {
             Ok(v) => v,
-            Err(_) => {
+            Err(e) => {
                 // 文件损坏时先改名留底，再回退默认值；否则下次写盘会把现场直接覆盖掉
-                let _ = fs::rename(&path, path.with_extension("corrupt-bak"));
+                let backup = corrupt_backup_path(&path, &crate::win32::file_timestamp_str());
+                match fs::rename(&path, &backup) {
+                    Ok(()) => crate::log_warn(
+                        "config",
+                        format!(
+                            "{} 解析失败: {}；已备份到 {}",
+                            path.display(),
+                            e,
+                            backup.display()
+                        ),
+                    ),
+                    Err(re) => crate::log_error(
+                        "config",
+                        format!(
+                            "{} 解析失败: {}；备份到 {} 也失败: {}",
+                            path.display(),
+                            e,
+                            backup.display(),
+                            re
+                        ),
+                    ),
+                }
                 fallback
             }
         },
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+            crate::log_warn("config", format!("读取 {} 失败: {}", path.display(), e));
+            fallback
+        }
         Err(_) => fallback,
     }
 }
@@ -107,8 +153,14 @@ pub fn write_json(path: &PathBuf, data: &Value) -> std::io::Result<()> {
     let tmp = path.with_extension("json.tmp");
     let text = serde_json::to_string_pretty(data)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-    fs::write(&tmp, text)?;
-    fs::rename(&tmp, path)?;
+    if let Err(e) = fs::write(&tmp, text) {
+        crate::log_error("config", format!("写入 {} 失败: {}", tmp.display(), e));
+        return Err(e);
+    }
+    if let Err(e) = fs::rename(&tmp, path) {
+        crate::log_error("config", format!("替换 {} 失败: {}", path.display(), e));
+        return Err(e);
+    }
     Ok(())
 }
 
@@ -437,9 +489,18 @@ pub fn write_groups(data: &Value) {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     #[test]
     fn default_config_uses_package_version() {
         let cfg = super::default_config();
         assert_eq!(cfg["version"], super::APP_VERSION);
+    }
+
+    #[test]
+    fn corrupt_backup_keeps_json_extension_and_timestamp() {
+        let p = super::corrupt_backup_path(Path::new("C:/ed/config.json"), "20261021-181500");
+        let name = p.file_name().unwrap().to_string_lossy();
+        assert_eq!(name, "config.corrupt-bak-20261021-181500.json");
     }
 }

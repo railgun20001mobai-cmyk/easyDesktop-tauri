@@ -76,6 +76,16 @@ static LAST_ACTIVATE_AT: AtomicU64 = AtomicU64::new(0);
 /// 本次呼出是否已经记过一条「因鼠标仍在面板/热区而没收起」的日志
 static SUPPRESS_LOGGED: AtomicBool = AtomicBool::new(false);
 
+/// 统一错误日志格式：`ERROR [scope] message`
+pub(crate) fn log_error(scope: &str, msg: impl std::fmt::Display) {
+    log(&format!("ERROR [{}] {}", scope, msg));
+}
+
+/// 统一警告日志格式：`WARN [scope] message`
+pub(crate) fn log_warn(scope: &str, msg: impl std::fmt::Display) {
+    log(&format!("WARN [{}] {}", scope, msg));
+}
+
 /// 写一行日志到 exe 同目录的 ed_calls.log（正式版也写：出问题时有据可查）
 pub(crate) fn log(msg: &str) {
     use std::io::Write;
@@ -993,9 +1003,9 @@ fn register_hotkey(app: &tauri::AppHandle) {
     match Shortcut::from_str(&spec) {
         Ok(sc) => match gs.register(sc) {
             Ok(_) => log(&format!("hotkey registered: {}", spec)),
-            Err(e) => log(&format!("hotkey register failed: {} ({})", spec, e)),
+            Err(e) => log_error("hotkey", format!("register {} failed: {}", spec, e)),
         },
-        Err(e) => log(&format!("hotkey parse failed: {} ({})", spec, e)),
+        Err(e) => log_error("hotkey", format!("parse {} failed: {}", spec, e)),
     }
 }
 
@@ -1082,7 +1092,7 @@ fn main() {
             register_hotkey(app.handle());
             // 托盘图标失败不影响主流程（例如被安全软件拦截）
             if let Err(e) = setup_tray(app.handle()) {
-                log(&format!("tray 创建失败: {}", e));
+                log_error("tray", format!("创建失败: {}", e));
             }
             // 启动后延时扫一次桌面，把新增快捷方式并进顺序（呼出时就不用重排了）
             std::thread::spawn(move || {

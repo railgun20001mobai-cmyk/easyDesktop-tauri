@@ -183,6 +183,16 @@ pub fn local_time_str() -> String {
     )
 }
 
+/// 文件名安全的时间戳：`20261021-181500`
+pub fn file_timestamp_str() -> String {
+    use windows::Win32::System::SystemInformation::GetLocalTime;
+    let st = unsafe { GetLocalTime() };
+    format!(
+        "{:04}{:02}{:02}-{:02}{:02}{:02}",
+        st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond
+    )
+}
+
 /// 前台窗口是不是全屏应用（游戏 / 全屏视频）
 pub fn is_fullscreen_foreground() -> bool {
     foreground_is_fullscreen()

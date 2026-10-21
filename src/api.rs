@@ -150,7 +150,10 @@ fn dispatch(method: &str, args: &[Value], app: &tauri::AppHandle) -> Value {
                         enable,
                         al.is_enabled()
                     )),
-                    Err(e) => crate::log(&format!("autostart set {} failed: {}", enable, e)),
+                    Err(e) => crate::log_error(
+                        "autostart",
+                        format!("set {} failed: {}", enable, e),
+                    ),
                 }
                 // 关掉开机自启时把「快速自启」任务一起删掉，
                 // 否则任务还会在登录时把程序拉起来，和界面对不上

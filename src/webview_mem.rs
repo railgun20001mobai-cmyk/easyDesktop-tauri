@@ -84,7 +84,7 @@ pub fn try_suspend(handle: &tauri::AppHandle) {
             Ok(())
         }));
         if let Err(e) = unsafe { core3.TrySuspend(&handler) } {
-            crate::log(&format!("webview: TrySuspend call failed {e:?}"));
+            crate::log_error("webview", format!("TrySuspend failed: {e:?}"));
         }
     });
 }
