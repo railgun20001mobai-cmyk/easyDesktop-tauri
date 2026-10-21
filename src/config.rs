@@ -47,7 +47,7 @@ fn dir_writable(dir: &std::path::Path) -> bool {
 fn default_config() -> Value {
     let (w, h) = crate::win32::screen_size();
     json!({
-        "version": "1.1.6",
+        "version": "1.1.7",
         "theme": "light",
         "language": "zh-CN",
         "themeChangeType": "1",
