@@ -4,7 +4,7 @@
 
 - 单窗口 Windows 桌面面板：Rust 侧负责窗口生命周期、热区、Win32、文件系统、配置、图标、缩略图和
   WebView2 内存；前端是上游 pywebview 版原样沿用的原生 HTML/CSS/JS。
-- 上游为 `vicent-yx/easyDesktop`（Python + pywebview，基线 2.9.0），本项目独立编号（当前 1.2.2）。
+- 上游为 `vicent-yx/easyDesktop`（Python + pywebview，基线 2.9.0），本项目独立编号（当前 1.2.3）。
   上游源码在 `D:\EasyDesktop\easyDesktop-src`，只作对照，不在本仓库修改。
 
 ## 调用链

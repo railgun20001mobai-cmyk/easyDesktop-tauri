@@ -27,7 +27,7 @@ npx @tauri-apps/cli@2 build --bundles nsis   # NSIS 安装包 → target/release
 - 前端资源在构建时内嵌：只改 `frontend/` 也要重新构建才进安装包。
 - 仓库搬家后若报 `failed to read plugin permissions ... <旧路径>`，是 `target/` 里残留了旧绝对路径；先
   `cargo clean` 再重试，不要改路径去迁就旧缓存。
-- `cargo test` 覆盖排序合并、拼音索引、版本来源等纯函数（当前 15 个用例）；不覆盖窗口/前端，UI 验收仍按
+- `cargo test` 覆盖排序合并、拼音索引、版本来源等纯函数（当前 21 个用例）；不覆盖窗口/前端，UI 验收仍按
   `docs/harness/verification.md` 真机走。
 - 前端脚本拆在 `frontend/resources/ed/`，按 `01`→`09` 顺序加载；拆文件不能改变依赖顺序，改完至少跑
   `node --check` 逐文件校验。
@@ -70,7 +70,7 @@ npx @tauri-apps/cli@2 build --bundles nsis   # NSIS 安装包 → target/release
 ## 完成定义
 
 1. 一次只做一个可验证的增量，不把不相关改动混在一起。
-2. `cargo test` 与 `cargo check` 通过（当前基线：15 个单测全过，`cargo check` exit 0、无警告）。
+2. `cargo test` 与 `cargo check` 通过（当前基线：21 个单测全过，`cargo check` exit 0、无警告）。
 3. 改 UI/窗口/热区/托盘/内存：按 `docs/harness/verification.md` 真机走一遍，并检查 `ed_calls.log` 无异常。
 4. 改数据：四个数据文件改动前后哈希一致（除非本次就是要改数据）。
 5. 发版：六处版本号一致 + NSIS 包实际安装/升级一次 + 真机清单通过。
