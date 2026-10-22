@@ -10,6 +10,7 @@ window.addEventListener('pywebviewready', async function () {
         // 【启动优化 P1｜风险:低】一次 bootstrap 取齐 config+version，替代分散的多次 get_config/get_version。
         const boot = await ApiHelper.call('bootstrap');
         const config = boot.config;
+        ConfigManager.current = config;
 
         // 初始化设置（透传 config 复用；updateDefaultDirectory 仅更新 UI、不在此处导航）
         await ConfigManager.updateDefaultDirectory(config, false);
@@ -25,7 +26,6 @@ window.addEventListener('pywebviewready', async function () {
         }
         DisplayModeManager.syncIcon();
         await NavigationManager.navigateTo(config["df_dir"]);
-        files_data = AppState.files_data; // 同步全局变量
         document.getElementById("v_note").innerText = "v"+boot.version
 
         // 初始化UI状态
@@ -129,7 +129,6 @@ window.addEventListener('pywebviewready', async function () {
         // 【启动优化 P0｜风险:中】删除原 setTimeout 内的 b2d.click() —— 它会再触发一次
         // refreshCurrentPath 导致第 3 次渲染。首屏导航/box1 显示/fit_btnBar 已由上面的
         // NavigationManager.navigateTo 完成，无需再点。
-        // setInterval(check_dirChange,1000);
 
     render_class_btn()
 });
@@ -151,9 +150,15 @@ const class_btn_bar =  document.getElementById("class_bar")
 // 原先每次过滤都要 await 一次 read_class 的跨桥 IPC，而 change_class 内部又没有 await
 // class_filter，导致 render 完成后过滤尚未生效、遮盖被提前揭开 → 闪出一帧「全部」。
 // 现在改为：渲染前就拿到成员集合，元素创建时直接写入正确的 display，全程无中间态。
-let classCache = null;
+const ClassViewState = {
+    cache: null,
+    current: "全部",
+    flipSeq: 0,
+    railScrollTo: null,
+    fitRafId: null,
+};
 function invalidateClassCache(){
-    classCache = null;
+    ClassViewState.cache = null;
 }
 function buildClassCache(data){
     const map = {};
@@ -165,17 +170,17 @@ function buildClassCache(data){
 // 返回当前分类的 fileId 集合；"全部"/空 返回 null（表示不过滤）
 async function getClassIdSet(title){
     if(!title || title === "" || title === "全部") return null;
-    if(!classCache){
+    if(!ClassViewState.cache){
         const d = await ApiHelper.call('read_class', '');
-        classCache = buildClassCache(d.data);
+        ClassViewState.cache = buildClassCache(d.data);
     }
-    return classCache[title] || new Set();
+    return ClassViewState.cache[title] || new Set();
 }
 // 纯同步地把过滤结果应用到已存在的 DOM
 function applyClassFilter(allowIds){
     const ctn = document.getElementById("filesContainer")
     const list_ctn = document.getElementById("filesListContainer")
-    for(file_item of [...ctn.children,...list_ctn.children]){
+    for(const file_item of [...ctn.children,...list_ctn.children]){
         // 拖拽期间容器里会多一个虚槽，它不是图标，别被过滤器顺手改掉显示状态
         if(file_item.classList.contains("ed-drag-slot")) continue;
         file_item.style.display = (!allowIds || allowIds.has(file_item.id)) ? "flex" : "none"
@@ -193,13 +198,12 @@ async function class_filter(path){
     // 命中缓存时为同步执行，不存在「渲染完成但过滤未生效」的窗口期
     applyClassFilter(await getClassIdSet(path));
 }
-let last_group = "全部"
 async function render_class_btn(){
     var classData =  await ApiHelper.call('read_class', '');
-    classCache = buildClassCache(classData.data);   // 顺手更新缓存，省掉后续一次 IPC
+    ClassViewState.cache = buildClassCache(classData.data);   // 顺手更新缓存，省掉后续一次 IPC
     class_btn_bar.innerHTML = '';
     var class_names = ["全部"]
-    for(item in classData.data){
+    for(const item in classData.data){
         class_names.push(item)
     }
     for(let index of class_names){
@@ -208,7 +212,7 @@ async function render_class_btn(){
             btn.dataset.reorderable = "1"   // 「全部」固定在首位，不参与排序
         }
         btn.classList.add("class_bar_btn")
-        if(index == last_group){
+        if(index == ClassViewState.current){
             btn.classList.add("active")
         }
         btn.innerHTML = `<span id="class_title">${index}</span>`
@@ -249,16 +253,15 @@ async function render_class_btn(){
     // 不再跟着分类列表一起重建——否则每次 render 都会把它的点击绑定丢掉。
     fit_btnBar()
     // 滚轮切过来的分类：按钮重建完了，下一帧把选中项滚进可视区
-    if(_railScrollTo){
-        const _target = _railScrollTo
-        _railScrollTo = null
+    if(ClassViewState.railScrollTo){
+        const _target = ClassViewState.railScrollTo
+        ClassViewState.railScrollTo = null
         requestAnimationFrame(function(){ railEnsureVisible(_target) })
     }
 }
 /* 滚轮切分类后要把选中项滚进可视区。
    必须挂在按钮重建之后：class_filter → render_class_btn 里的 innerHTML=''
    会把栏的 scrollTop 冲成 0，所以这里只记下目标，由 render_class_btn 收尾时执行。 */
-let _railScrollTo = null;
 /* 返回 true = 已经处理完（滚动过了、或本来就不需要滚）；false = 按钮还没就绪，等下次。
    做法是"居中"而不是"贴顶"：贴顶对测量误差（缩放/滚动区上沿的零头）很敏感，
    差几个像素就会把选中项裁掉一条；居中留了余量，几像素的误差看不出来。 */
@@ -300,11 +303,10 @@ function classFlipDir(prev, next){
    全程只动 transform/opacity（合成器合成），不复制 DOM、不触发重排；
    两段 110ms + 190ms，沿用 M3 的"退场快、进场稍慢"节奏。
    纵向翻的一版已废弃，keyframes 也从 frame.css 删除，要再试就照这套类名补一组 translateY 的。
-   flipSeq 防连点：新的一次切换开始后，旧的那次在 await 点直接让位。 */
+   ClassViewState.flipSeq 防连点：新的一次切换开始后，旧的那次在 await 点直接让位。 */
 const PAGE_FLIP_CLASSES = ['ed-page-out-left', 'ed-page-out-right', 'ed-page-in-left', 'ed-page-in-right'];
-let flipSeq = 0;
 async function class_flip(title, dir){
-    const my = ++flipSeq;
+    const my = ++ClassViewState.flipSeq;
     const boxes = [DOMCache.get('filesContainer'), DOMCache.get('filesListContainer')].filter(Boolean);
     if(!boxes.length){ await class_filter(title); return; }
     const outCls = dir >= 0 ? 'ed-page-out-left' : 'ed-page-out-right';
@@ -312,14 +314,14 @@ async function class_flip(title, dir){
     boxes.forEach(b => b.classList.remove(...PAGE_FLIP_CLASSES));
     boxes.forEach(b => b.classList.add(outCls));
     await new Promise(r => setTimeout(r, 110));
-    if(my !== flipSeq) return;
+    if(my !== ClassViewState.flipSeq) return;
     boxes.forEach(b => b.classList.remove(outCls));
     await class_filter(title);              // 真正的过滤在这里同步生效
-    if(my !== flipSeq) return;
+    if(my !== ClassViewState.flipSeq) return;
     if(boxes[0]) void boxes[0].offsetWidth; // 保证入场动画能重新播放
     boxes.forEach(b => b.classList.add(inCls));
     await new Promise(r => setTimeout(r, 190));
-    if(my !== flipSeq) return;
+    if(my !== ClassViewState.flipSeq) return;
     boxes.forEach(b => b.classList.remove(inCls));
 }
 
@@ -331,8 +333,8 @@ async function change_class(title){
             e.className = "class_bar_btn"
         }
     }
-    const prev = last_group;
-    last_group = title;
+    const prev = ClassViewState.current;
+    ClassViewState.current = title;
     // 【闪屏修复】原先这里没有 await，调用方以为过滤已完成、提前揭开遮盖 → 闪出「全部」
     try{
         await class_flip(title, classFlipDir(prev, title));
@@ -344,8 +346,8 @@ async function delete_class(cid){
     await ApiHelper.call("remove_class",cid)
     invalidateClassCache();
     render_class_btn()
-    last_group = "全部"
-    await class_filter(last_group)
+    ClassViewState.current = "全部"
+    await class_filter(ClassViewState.current)
 }
 /* 【分类栏｜左侧竖向栏】
    原来是"双层 90° 旋转把竖排凑成横排 + 负 marginTop 把内容拉回顶部"，
@@ -369,11 +371,10 @@ async function fit_btnBar() {
 // 【性能优化】原先这里用 setInterval(fit_btnBar,200) 每 200ms 无条件跑一次，
 // 里面全是 offsetWidth/offsetHeight 读取 → 每 5 秒强制一次同步重排，且永不停止。
 // 改成：尺寸真正变化时（ResizeObserver / 窗口缩放）才跑，并用 rAF 合并同一帧内的多次触发。
-let _fitRafId = null;
 function requestFitBtnBar(){
-    if(_fitRafId !== null) return;
-    _fitRafId = requestAnimationFrame(() => {
-        _fitRafId = null;
+    if(ClassViewState.fitRafId !== null) return;
+    ClassViewState.fitRafId = requestAnimationFrame(() => {
+        ClassViewState.fitRafId = null;
         fit_btnBar();
     });
 }
@@ -410,18 +411,18 @@ document.getElementById("class_bar_btn").addEventListener("click", add_class);
         if(now - last < 200) return
         last = now
         const names = class_names_list()
-        let i = names.indexOf(last_group)
+        let i = names.indexOf(ClassViewState.current)
         if(i < 0) i = 0
         i += dir
         if(i < 0) i = names.length - 1
         if(i > names.length - 1) i = 0
         const next = names[i]
-        if(!next || next === last_group) return
-        _railScrollTo = next          // 兜底：万一这轮会重建按钮，交给 render_class_btn 收尾处理
+        if(!next || next === ClassViewState.current) return
+        ClassViewState.railScrollTo = next          // 兜底：万一这轮会重建按钮，交给 render_class_btn 收尾处理
         change_class(next)
         // 正常情况按钮不重建（applyClassFilter 只改条目的 display），下一帧直接滚；
         // 动画期间还有别的布局变动会把滚动位置带偏，所以过一会儿再幂等校正一次。
-        requestAnimationFrame(function(){ if(railEnsureVisible(next)) _railScrollTo = null })
+        requestAnimationFrame(function(){ if(railEnsureVisible(next)) ClassViewState.railScrollTo = null })
         setTimeout(function(){ railEnsureVisible(next) }, 280)
     }, { passive: false })
 })();

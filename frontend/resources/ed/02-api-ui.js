@@ -6,17 +6,25 @@ const ApiHelper = {
     },
 
     async getConfig() {
-        return await this.call('get_config');
+        const config = await this.call('get_config');
+        // 每次读到后端最新配置就刷新缓存，避免 ConfigManager.current 长期留在旧版本
+        if (typeof ConfigManager !== "undefined" && config && typeof config === "object") {
+            ConfigManager.current = config;
+        }
+        return config;
     },
 
     async updateConfig(key, value) {
+        // 同步更新本地配置缓存：不少设置是"发完 IPC 立刻按 config 重绘"，
+        // 等后端返回再刷新会让界面读到上一版值
+        if (typeof ConfigManager !== "undefined" && ConfigManager.current) {
+            ConfigManager.current[key] = value;
+        }
         return await this.call('update_config', key, value);
     },
 
     async getFileInfo(path,quick=true,ign_icno=false) {
-        var data = await this.call('get_fileinfo', path,quick,ign_icno);
-        AppState.filter_data = data["filter_data"];
-        return data;
+        return await this.call('get_fileinfo', path, quick, ign_icno);
     },
 
     async openFile(filePath) {
@@ -55,7 +63,7 @@ const ApiHelper = {
         await this.call('clean_temp');
         clearImgPreviewCache();
         if(typeof invalidateClassCache === "function") invalidateClassCache();
-        _desktopPathCache = null;
+        NavigationManager.desktopPathCache = null;
         UIUtils.showMessage("缓存清理完成",false)
         NavigationManager.refreshCurrentPath();
     },

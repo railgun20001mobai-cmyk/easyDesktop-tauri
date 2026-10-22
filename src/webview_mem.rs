@@ -33,7 +33,7 @@ where
 pub fn set_invisible(handle: &tauri::AppHandle) {
     with_webview(handle, |controller, _| {
         let _ = unsafe { controller.SetIsVisible(false) };
-        crate::log("webview: invisible");
+        crate::logging::info("webview", "webview: invisible");
     });
 }
 
@@ -47,7 +47,7 @@ pub fn set_low(handle: &tauri::AppHandle) {
         }
         .is_ok()
         {
-            crate::log("webview: low memory");
+            crate::logging::info("webview", "webview: low memory");
         }
     });
 }
@@ -64,7 +64,7 @@ pub fn resume(handle: &tauri::AppHandle) {
                 core19.SetMemoryUsageTargetLevel(COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL)
             };
         }
-        crate::log("webview: resume");
+        crate::logging::info("webview", "webview: resume");
     });
 }
 
@@ -75,16 +75,17 @@ pub fn try_suspend(handle: &tauri::AppHandle) {
         };
         let handler = TrySuspendCompletedHandler::create(Box::new(|hr, suspended| {
             if hr.is_ok() && suspended {
-                crate::log("webview: suspended");
+                crate::logging::info("webview", "webview: suspended");
             } else {
-                crate::log(&format!(
-                    "webview: suspend failed hr={hr:?} suspended={suspended}"
-                ));
+                crate::logging::warn(
+                    "webview",
+                    format!("webview: suspend failed hr={hr:?} suspended={suspended}"),
+                );
             }
             Ok(())
         }));
         if let Err(e) = unsafe { core3.TrySuspend(&handler) } {
-            crate::log_error("webview", format!("TrySuspend failed: {e:?}"));
+            crate::logging::error("webview", format!("TrySuspend failed: {e:?}"));
         }
     });
 }

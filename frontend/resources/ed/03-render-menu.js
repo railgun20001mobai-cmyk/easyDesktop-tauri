@@ -77,7 +77,7 @@ class FileRenderer {
         if(ctn.children.length > 0) return;
         const files = (typeof AppState !== "undefined" && AppState.files_data) || [];
         if(files.length === 0) return;
-        const allowIds = await getClassIdSet(last_group);
+        const allowIds = await getClassIdSet(ClassViewState.current);
         await this.render(files, mode, false, allowIds);
     }
 
@@ -221,7 +221,7 @@ class FileRenderer {
         }
         if (file.fileType === '文件夹') {
             if (isDoubleClick) {
-                if(config["dbc_action"]=="1"){
+                if(ConfigManager.current && ConfigManager.current.dbc_action=="1"){
                     ApiHelper.openFile(file.filePath);
                 }else{
                     NavigationManager.navigateTo(file.filePath);
@@ -233,7 +233,7 @@ class FileRenderer {
             ApiHelper.call('open_sysApp', file.filePath);
         } else {
             if (isDoubleClick) {
-                if(config["dbc_action"]=="1"){
+                if(ConfigManager.current && ConfigManager.current.dbc_action=="1"){
                     ApiHelper.showFile(file.filePath);
                 }else{
                     ApiHelper.openFile(file.filePath);
@@ -360,11 +360,10 @@ const MenuManager = {
 };
 
 // 桌面路径在一次会话内不会变化，缓存起来，省掉每次导航一次跨桥 IPC
-let _desktopPathCache = null;
 async function getDesktopPathCached(){
-    if(_desktopPathCache === null){
-        _desktopPathCache = await ApiHelper.call('search_desktop_path');
+    if(NavigationManager.desktopPathCache === null){
+        NavigationManager.desktopPathCache = await ApiHelper.call('search_desktop_path');
     }
-    return _desktopPathCache;
+    return NavigationManager.desktopPathCache;
 }
 

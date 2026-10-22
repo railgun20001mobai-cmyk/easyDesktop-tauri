@@ -4,6 +4,7 @@ mod api;
 mod config;
 mod files;
 mod icons;
+mod logging;
 mod order;
 mod preview;
 mod webview_mem;
@@ -28,7 +29,7 @@ static LOCK_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsi
 pub fn lock_visibility() {
     let n = LOCK_COUNT.fetch_add(1, Ordering::SeqCst) + 1;
     LOCKED.store(true, Ordering::SeqCst);
-    log(&format!("lock visibility (n={})", n));
+    logging::debug("window", format!("lock visibility (n={})", n));
 }
 
 /// 解锁：计数归零才真正允许自动收起
@@ -39,9 +40,9 @@ pub fn unlock_visibility() {
     if prev <= 1 {
         LOCK_COUNT.store(0, Ordering::SeqCst);
         LOCKED.store(false, Ordering::SeqCst);
-        log("unlock visibility (n=0 -> 可自动收起)");
+        logging::debug("window", "unlock visibility (n=0 -> 可自动收起)");
     } else {
-        log(&format!("unlock visibility (n={} -> 仍锁着)", prev - 1));
+        logging::debug("window", format!("unlock visibility (n={} -> 仍锁着)", prev - 1));
     }
 }
 /// 面板展开后是否还没抢到前台焦点（WebView2 非激活时会吞掉第一次点击）
@@ -72,47 +73,6 @@ static CORNER_ENTER: AtomicU64 = AtomicU64::new(0);
 static LAST_ACTIVATE_AT: AtomicU64 = AtomicU64::new(0);
 /// 本次呼出是否已经记过一条「因鼠标仍在面板/热区而没收起」的日志
 static SUPPRESS_LOGGED: AtomicBool = AtomicBool::new(false);
-
-/// 统一错误日志格式：`ERROR [scope] message`
-pub(crate) fn log_error(scope: &str, msg: impl std::fmt::Display) {
-    log(&format!("ERROR [{}] {}", scope, msg));
-}
-
-/// 统一警告日志格式：`WARN [scope] message`
-pub(crate) fn log_warn(scope: &str, msg: impl std::fmt::Display) {
-    log(&format!("WARN [{}] {}", scope, msg));
-}
-
-/// 写一行日志到 exe 同目录的 ed_calls.log（正式版也写：出问题时有据可查）
-pub(crate) fn log(msg: &str) {
-    use std::io::Write;
-    log_rotate_if_needed();
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(config::exe_dir().join("ed_calls.log"))
-    {
-        // 带本地时间戳：排查问题时要能和系统事件日志（重启/蓝屏/崩溃）对时间线
-        let _ = writeln!(f, "[{}] [rust] {}", win32::local_time_str(), msg);
-    }
-}
-
-/// 日志上限 512KB，超了就从零开始（日志只用于排查问题，不该无限增长）
-///
-/// 每 128 次写入才 stat 一次，避免频繁系统调用。
-pub fn log_rotate_if_needed() {
-    const LOG_MAX: u64 = 512 * 1024;
-    static TICK: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-    if TICK.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % 128 != 0 {
-        return;
-    }
-    let path = config::exe_dir().join("ed_calls.log");
-    if let Ok(meta) = std::fs::metadata(&path) {
-        if meta.len() > LOG_MAX {
-            let _ = std::fs::write(&path, "[rust] 日志超过 512KB，已重置\n");
-        }
-    }
-}
 
 static START_INSTANT: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
 /// 最近一次展开的毫秒时间戳
@@ -381,13 +341,16 @@ fn slide_window(
         }
         std::thread::sleep(Duration::from_millis(6));
     }
-    log(&format!(
-        "slide({}): {} frames / {}ms{}",
-        if exit { "out" } else { "in" },
-        frames,
-        t0.elapsed().as_millis(),
-        if done { "" } else { " (被打断)" }
-    ));
+    logging::debug(
+        "window",
+        format!(
+            "slide({}): {} frames / {}ms{}",
+            if exit { "out" } else { "in" },
+            frames,
+            t0.elapsed().as_millis(),
+            if done { "" } else { " (被打断)" }
+        ),
+    );
     done
 }
 
@@ -441,13 +404,13 @@ pub fn set_logon_task(app: &tauri::AppHandle, on: bool) {
         if ok {
             let _ = app.autolaunch().disable();
         }
-        log(&format!("logon task create = {}", ok));
+        logging::info("autostart", format!("logon task create = {}", ok));
     } else {
         let ok = schtasks(&["/delete", "/f", "/tn", LOGON_TASK]);
         if config::get().auto_start {
             let _ = app.autolaunch().enable();
         }
-        log(&format!("logon task delete = {}", ok));
+        logging::info("autostart", format!("logon task delete = {}", ok));
     }
 }
 
@@ -502,7 +465,6 @@ fn open_js() -> String {
     // 刷新推迟到进场动画结束后：呼出当帧做全量扫描+重渲染会和滑入动画抢主线程，
     // 表现为"框先出现、内容后出现"。show 时看到的是隐藏期间保留的旧 DOM，不会空白。
     "try{\
-      window_state=true;\
       if(typeof window.edOnPanelShow==='function')window.edOnPanelShow();\
       var p=document.getElementById('themeSettingsPanel');if(p)p.style.display='none';\
       if(typeof enableScroll==='function')enableScroll();\
@@ -562,12 +524,12 @@ fn show_panel(handle: &tauri::AppHandle) {
                 // 抢焦点（AttachThreadInput + Alt 兜底，否则面板会立刻被"失焦收起"规则收掉）
                 let _ = w.set_focus();
                 let raw = w.hwnd().map(|h| h.0 as isize).unwrap_or(0);
-                log(&format!("hwnd raw = {}", raw));
+                logging::debug("window", format!("hwnd raw = {}", raw));
                 // 前台是全屏应用时只做温和抢焦点（不 AttachThreadInput、不注入 Alt），
                 // 避免和全屏游戏/全屏视频抢线程输入队列
                 let gentle = win32::is_fullscreen_foreground();
                 if gentle {
-                    log("show: 前台是全屏应用，温和抢焦点");
+                    logging::info("window", "show: 前台是全屏应用，温和抢焦点");
                 }
                 win32::force_foreground(raw, gentle);
                 // 逐帧滑到目标位置（后台线程驱动，不阻塞主线程）
@@ -682,10 +644,10 @@ fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     if let Some(icon) = app.default_window_icon() {
         builder = builder.icon(icon.clone());
     } else {
-        log("tray: 未取到默认窗口图标");
+        logging::warn("tray", "tray: 未取到默认窗口图标");
     }
     builder.build(app)?;
-    log("tray: 托盘图标已创建");
+    logging::info("tray", "tray: 托盘图标已创建");
     Ok(())
 }
 
@@ -716,9 +678,9 @@ pub fn refresh_desktop_order_on_start() {
 
     let n = config::merge_desktop_order(&key, all);
     if n > 0 {
-        log(&format!("startup scan: dir_order 已更新，共 {} 项", n));
+        logging::info("order", format!("startup scan: dir_order 已更新，共 {} 项", n));
     } else {
-        log("startup scan: 顺序无变化");
+        logging::info("order", "startup scan: 顺序无变化");
     }
 }
 
@@ -772,7 +734,7 @@ fn start_corner_watcher(handle: tauri::AppHandle) {
                     if trigger_blocked() {
                         // 前台是全屏应用（多半在打游戏 / 看全屏视频）：忽略这次热区触发。
                         // 呼出会把面板置顶 + 抢焦点，对全屏应用是被动且危险的操作。
-                        log("corner: 前台是全屏应用，已忽略触发");
+                        logging::debug("corner", "corner: 前台是全屏应用，已忽略触发");
                         CORNER_ENTER.store(0, Ordering::SeqCst);
                         // 鼠标不离开热区就不再重复判断，离开后才重新武装
                         CORNER_ARMED.store(false, Ordering::SeqCst);
@@ -787,7 +749,7 @@ fn start_corner_watcher(handle: tauri::AppHandle) {
             // 面板开着时前台出现了全屏应用（进了游戏 / 全屏视频）→ 立刻收起，
             // 免得一个置顶窗口压在人家上面
             if trigger_blocked() {
-                log("hide: 前台出现全屏应用，自动收起面板");
+                logging::info("window", "hide: 前台出现全屏应用，自动收起面板");
                 WINDOW_VISIBLE.store(false, Ordering::SeqCst);
                 hide_panel(&handle);
                 continue;
@@ -817,7 +779,7 @@ fn start_corner_watcher(handle: tauri::AppHandle) {
                     LAST_ACTIVATE_AT.store(now_ms(), Ordering::SeqCst);
                     // 只做温和激活：这里鼠标已经在面板上，用不着 AttachThreadInput + 注入 Alt。
                     // 那套激进手段会在呼出动画刚开始时闪一下窗口状态，表现为"跳变"。
-                    log("show: 鼠标进入面板，温和补抢焦点");
+                    logging::debug("window", "show: 鼠标进入面板，温和补抢焦点");
                     win32::activate_by_title("EasyDesktop_Main", true);
                 }
             }
@@ -842,10 +804,13 @@ fn start_corner_watcher(handle: tauri::AppHandle) {
                 let lost_focus = !win32::is_self_foreground("EasyDesktop_Main");
                 if lost_focus && (in_panel || in_hot) {
                     if !SUPPRESS_LOGGED.swap(true, Ordering::SeqCst) {
-                        log(&format!(
-                            "hide: 失焦但鼠标仍在面板/热区，暂不收起 cursor=({}, {})",
-                            x, y
-                        ));
+                        logging::debug(
+                            "window",
+                            format!(
+                                "hide: 失焦但鼠标仍在面板/热区，暂不收起 cursor=({}, {})",
+                                x, y
+                            ),
+                        );
                     }
                     false
                 } else {
@@ -854,16 +819,19 @@ fn start_corner_watcher(handle: tauri::AppHandle) {
             };
 
             if should_hide {
-                log(&format!(
-                    "hide: out_cf_type={} cursor=({}, {}) panel=({}, {}, {}, {})",
-                    out_cf_type(),
-                    x,
-                    y,
-                    px,
-                    py,
-                    pw,
-                    ph
-                ));
+                logging::info(
+                    "window",
+                    format!(
+                        "hide: out_cf_type={} cursor=({}, {}) panel=({}, {}, {}, {})",
+                        out_cf_type(),
+                        x,
+                        y,
+                        px,
+                        py,
+                        pw,
+                        ph
+                    ),
+                );
                 WINDOW_VISIBLE.store(false, Ordering::SeqCst);
                 NEEDS_ACTIVATION.store(false, Ordering::SeqCst);
                 hide_panel(&handle);
@@ -945,15 +913,15 @@ fn register_hotkey(app: &tauri::AppHandle) {
     let _ = gs.unregister_all();
 
     let Some(spec) = spec else {
-        log("hotkey: 仅角落触发，未注册全局热键");
+        logging::info("hotkey", "hotkey: 仅角落触发，未注册全局热键");
         return;
     };
     match Shortcut::from_str(&spec) {
         Ok(sc) => match gs.register(sc) {
-            Ok(_) => log(&format!("hotkey registered: {}", spec)),
-            Err(e) => log_error("hotkey", format!("register {} failed: {}", spec, e)),
+            Ok(_) => logging::info("hotkey", format!("hotkey registered: {}", spec)),
+            Err(e) => logging::error("hotkey", format!("register {} failed: {}", spec, e)),
         },
-        Err(e) => log_error("hotkey", format!("parse {} failed: {}", spec, e)),
+        Err(e) => logging::error("hotkey", format!("parse {} failed: {}", spec, e)),
     }
 }
 
@@ -962,19 +930,22 @@ fn main() {
     std::panic::set_hook(Box::new(|info| {
         let bt = std::backtrace::Backtrace::force_capture().to_string();
         let head: Vec<&str> = bt.lines().take(12).collect();
-        log(&format!("!!! panic: {} || 调用栈: {}", info, head.join(" <- ")));
+        logging::error("panic", format!("!!! panic: {} || 调用栈: {}", info, head.join(" <- ")));
     }));
 
     // 单实例：已有实例在跑就直接退出，避免两个进程抢热区和配置
     if win32::already_running() {
-        log("已有实例在运行，本次启动退出");
+        logging::info("app", "已有实例在运行，本次启动退出");
         return;
     }
-    log(&format!(
-        "=== 启动 v{} pid={} ===",
-        env!("CARGO_PKG_VERSION"),
-        std::process::id()
-    ));
+    logging::info(
+        "app",
+        format!(
+            "=== 启动 v{} pid={} ===",
+            env!("CARGO_PKG_VERSION"),
+            std::process::id()
+        ),
+    );
 
     tauri::Builder::default()
         .plugin(tauri_plugin_autostart::init(
@@ -986,7 +957,7 @@ fn main() {
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, _shortcut, event| {
                     use tauri_plugin_global_shortcut::ShortcutState;
-                    log(&format!("hotkey event: {:?}", event.state()));
+                    logging::debug("hotkey", format!("hotkey event: {:?}", event.state()));
                     if event.state() != ShortcutState::Pressed {
                         return;
                     }
@@ -1040,7 +1011,7 @@ fn main() {
             register_hotkey(app.handle());
             // 托盘图标失败不影响主流程（例如被安全软件拦截）
             if let Err(e) = setup_tray(app.handle()) {
-                log_error("tray", format!("创建失败: {}", e));
+                logging::error("tray", format!("创建失败: {}", e));
             }
             // 启动后延时扫一次桌面，把新增快捷方式并进顺序（呼出时就不用重排了）
             std::thread::spawn(move || {
@@ -1061,7 +1032,7 @@ fn main() {
             // 正常退出会走到这里（托盘「退出」）。反过来说：日志里只有启动行、
             // 没有这行结束行，就说明进程是被外部杀掉或随系统一起挂掉的。
             if let tauri::RunEvent::Exit = event {
-                log("app exit (正常退出)");
+                logging::info("app", "app exit (正常退出)");
             }
         });
 }

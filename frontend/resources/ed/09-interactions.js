@@ -1,4 +1,3 @@
-let enter_click = false;
 window.addEventListener("keydown", function(event) {
     if (event.key === 'Enter') {
         // 输入框活跃或对话框打开时不触发文件点击
@@ -8,11 +7,11 @@ window.addEventListener("keydown", function(event) {
         if (DOMCache.get("groupDeleteConfirm").style.display === "flex") return;
         if (DOMCache.get("themeSettingsPanel").style.display === "flex")return;
         for(let e of [...document.getElementById("filesContainer").children,...document.getElementById("filesListContainer").children]){
-            if(e.style.display != "none" && enter_click==false){
-                enter_click = true
+            if(e.style.display != "none" && !ItemSelection.enterClick){
+                ItemSelection.enterClick = true
                 e.click()
                 setTimeout(function () {
-                    enter_click = false
+                    ItemSelection.enterClick = false
                 }, 3000);
                 break
             }
@@ -21,16 +20,16 @@ window.addEventListener("keydown", function(event) {
 });
 
 
-let dragging = false
-boxs = [
-    document.getElementById("filesContainer"),
-    document.getElementById("filesListContainer"),
-    document.getElementById("class_bar"),
-    document.getElementById("groupFilesContainer")
-]
-content_box = document.getElementById("content_box")
-boxs[0].dataset.other = "list"
-boxs[1].dataset.other = "grid"
+/* 四个可拖拽容器。分类栏是横向轨道，其余三个是网格 / 列表 / 组视图。
+   Object.values 的顺序参与事件注册，别随手调换字段。 */
+const Layout = {
+    grid: document.getElementById("filesContainer"),
+    list: document.getElementById("filesListContainer"),
+    classBar: document.getElementById("class_bar"),
+    groupFiles: document.getElementById("groupFilesContainer"),
+};
+Layout.grid.dataset.other = "list"
+Layout.list.dataset.other = "grid"
 /* 当前可见的文件滚动容器（网格 / 列表二选一）。
    布局改成"卡片内滚动"之后，回到顶部、拖拽自动滚动都作用于它，而不是整页。 */
 function activeFileScroller(){
@@ -144,6 +143,8 @@ function runFlip(list, mutate){
    注意别命名为 Selection：那是浏览器自带的 DOM 接口，顶层 const 会把它遮蔽掉。 */
 const ItemSelection = {
     nodes: new Set(),
+    /* Enter 打开首个图标的防抖锁：3 秒内连按不重复触发 */
+    enterClick: false,
     /* 整批换成这批节点（框选每帧都要重算，逐个 toggle 太碎） */
     applySet(nodes){
         const next = new Set(nodes);
@@ -240,7 +241,6 @@ const DragManager = {
         this.primary = p.el;
         this.active = true;
         this.suppressClick = true;
-        dragging = true;
         this.scroller = scrollParentOf(p.el);
         const r = p.el.getBoundingClientRect();
         this.grabX = e.clientX - r.left;
@@ -295,7 +295,7 @@ const DragManager = {
         /* 列表视图的行接近全屏宽，原来的 7px 斜向错位叠上去等于完全重合，
            看着像渲染坏了；行布局改成纵向叠牌（步长更大、越远越缩）。
            分类栏虽然也是扁的，但它是横向轨道，仍按斜向扇形叠。 */
-        const row = this.list !== boxs[2] && isRowLike(r);
+        const row = this.list !== Layout.classBar && isRowLike(r);
         show.forEach((node, i) => {
             const step = i - at;
             const c = this.cloneFor(node);
@@ -357,14 +357,14 @@ const DragManager = {
         const target = under.closest(ITEM_SEL);
         if(!target || target.parentElement !== list) return;
         if(this.nodes.indexOf(target) >= 0) return;
-        if(list === boxs[2] && target.dataset.reorderable !== "1") return;
+        if(list === Layout.classBar && target.dataset.reorderable !== "1") return;
         if(target.dataset.is_cl !== primary.dataset.is_cl) return;
         const r = target.getBoundingClientRect();
         /* 插到目标的哪一侧，交给 insertSide：行看上下半、格子看左右半。
            连续压在同一个目标上判定时，把上一次的结论一起传进去做迟滞，
            否则指针在中线附近蹭两下，邻居就朝两边来回让位（抽搐）。 */
         const prev = this.slotTarget === target ? this.lastSide : null;
-        const side = insertSide(x, y, r, list === boxs[2], prev);
+        const side = insertSide(x, y, r, list === Layout.classBar, prev);
         this.slotTarget = target;
         this.lastSide = side;
         this.placeSlot(target, side);
@@ -428,7 +428,6 @@ const DragManager = {
         this.pending = null;
         if(!this.active) return;
         this.active = false;
-        dragging = false;
         cancelAnimationFrame(this.raf);
         document.body.classList.remove("ed-dragging");
 
@@ -503,12 +502,12 @@ const DragManager = {
 
         if(primary.classList.contains("class_bar_btn")){
             const order = [];
-            for(const item of boxs[2].children){
+            for(const item of Layout.classBar.children){
                 if(item.dataset.reorderable !== "1") continue;
                 order.push(item.id);
             }
             await ApiHelper.call("save_classOrder", order);
-        }else if(list === boxs[3]){
+        }else if(list === Layout.groupFiles){
             const rect = groupContainer.getBoundingClientRect();
             const outside = e.clientX < rect.left || e.clientX > rect.right
                 || e.clientY < rect.top || e.clientY > rect.bottom;
@@ -553,7 +552,7 @@ const Marquee = {
     down(e, list){
         if(e.button !== 0 || !e.shiftKey) return false;
         // 分类栏是横向短列表，圈它没有意义；勾选小按钮上也不起框
-        if(list === boxs[2]) return false;
+        if(list === Layout.classBar) return false;
         if(e.target.closest(".file-cl, .file-list-cl")) return false;
         // 上一把橡皮筋可能因为窗口在按住时被收起而没收到 mouseup，先收拾干净
         if(this.active) this.up();
@@ -683,7 +682,7 @@ const Marquee = {
     }
 };
 
-for(const list of boxs){
+for(const list of Object.values(Layout)){
     list.addEventListener("mousedown", (e) => { if(!Marquee.down(e, list)) DragManager.onDown(e, list); });
 }
 document.addEventListener("mousemove", (e) => { Marquee.move(e); DragManager.onMove(e); });
@@ -720,13 +719,9 @@ document.addEventListener("mousedown", () => {
 }, true);
 
 async function save_new_order(reload_part){
-    if(boxs[0].style.display!="none"){
-        target_box = boxs[0]
-    }else{
-        target_box = boxs[1]
-    }
-    let new_order = []
-    for(let item of target_box.children){
+    const targetBox = Layout.grid.style.display != "none" ? Layout.grid : Layout.list;
+    const new_order = []
+    for(let item of targetBox.children){
         new_order.push(AppState.files_data[item.dataset.list_index])
     }
     await ApiHelper.call("update_config_order",AppState.currentPath,new_order)

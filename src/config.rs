@@ -224,7 +224,7 @@ where
                 // 文件损坏时先改名留底，再回退默认值；否则下次写盘会把现场直接覆盖掉
                 let backup = corrupt_backup_path(&path, &crate::win32::file_timestamp_str());
                 match fs::rename(&path, &backup) {
-                    Ok(()) => crate::log_warn(
+                    Ok(()) => crate::logging::warn(
                         "config",
                         format!(
                             "{} 解析失败: {}；已备份到 {}",
@@ -233,7 +233,7 @@ where
                             backup.display()
                         ),
                     ),
-                    Err(re) => crate::log_error(
+                    Err(re) => crate::logging::error(
                         "config",
                         format!(
                             "{} 解析失败: {}；备份到 {} 也失败: {}",
@@ -248,7 +248,7 @@ where
             }
         },
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
-            crate::log_warn("config", format!("读取 {} 失败: {}", path.display(), e));
+            crate::logging::warn("config", format!("读取 {} 失败: {}", path.display(), e));
             fallback
         }
         Err(_) => fallback,
@@ -261,11 +261,11 @@ pub fn write_json<T: Serialize + ?Sized>(path: &PathBuf, data: &T) -> std::io::R
     let text = serde_json::to_string_pretty(data)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
     if let Err(e) = fs::write(&tmp, text) {
-        crate::log_error("config", format!("写入 {} 失败: {}", tmp.display(), e));
+        crate::logging::error("config", format!("写入 {} 失败: {}", tmp.display(), e));
         return Err(e);
     }
     if let Err(e) = fs::rename(&tmp, path) {
-        crate::log_error("config", format!("替换 {} 失败: {}", path.display(), e));
+        crate::logging::error("config", format!("替换 {} 失败: {}", path.display(), e));
         return Err(e);
     }
     Ok(())
@@ -305,7 +305,7 @@ pub fn get_public() -> Value {
             v
         }
         Err(e) => {
-            crate::log_error("config", format!("序列化公开配置失败: {e}"));
+            crate::logging::error("config", format!("序列化公开配置失败: {e}"));
             json!({})
         }
     }
@@ -343,12 +343,12 @@ pub fn update(part: &str, data: Value) {
         let mut value = match serde_json::to_value(&*cfg) {
             Ok(v) => v,
             Err(e) => {
-                crate::log_error("config", format!("更新 {} 前序列化失败: {e}", part));
+                crate::logging::error("config", format!("更新 {} 前序列化失败: {e}", part));
                 return false;
             }
         };
         let Some(o) = value.as_object_mut() else {
-            crate::log_error("config", "配置根节点不是对象，拒绝更新");
+            crate::logging::error("config", "配置根节点不是对象，拒绝更新");
             return false;
         };
         o.insert(part.to_string(), data);
@@ -358,7 +358,7 @@ pub fn update(part: &str, data: Value) {
                 true
             }
             Err(e) => {
-                crate::log_error("config", format!("更新 {} 的类型不匹配: {e}", part));
+                crate::logging::error("config", format!("更新 {} 的类型不匹配: {e}", part));
                 false
             }
         }

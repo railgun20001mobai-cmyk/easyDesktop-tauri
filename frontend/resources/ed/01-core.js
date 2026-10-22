@@ -237,31 +237,22 @@ const Utils = {
 // ========== 应用状态管理 ==========
 const AppState = {
     files_data: [],
-    filter_data:[],
     selectedFile: null,
-    contextMenu: null,
     dealing: false,
     currentPath: '',
     pathHistory: [],
     currentHistoryIndex: -1,
     timer: null,
     db_click_action: false,
-    in_edit: false,
     /* 当前真正生效的搜索关键词。多处代码只把输入框清空、不重新渲染，
        于是出现"框里没字、列表还是上次搜索结果"；用这个字段判断视图是否需要同步。 */
     searchKey: '',
-
-    reset() {
-        this.files_data = [];
-        this.selectedFile = null;
-        this.dealing = false;
-        this.db_click_action = false;
-        this.in_edit = false;
-        if (this.timer) {
-            clearTimeout(this.timer);
-            this.timer = null;
-        }
-    },
+    /* 面板是否已收起：Rust 收起前调 edOnPanelHide、呼出时调 edOnPanelShow 同步 */
+    panelHidden: true,
+    /* 「调整面板尺寸」模式：打开时设置项隐藏、只留完成按钮 */
+    settingsMode: false,
+    /* 当前打开的分类设置对话框的取消入口；没打开时为 null */
+    fileSelectorCancel: null,
 
     setFiles(files) {
         this.files_data = files;

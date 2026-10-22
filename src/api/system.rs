@@ -74,15 +74,8 @@ pub(super) fn dispatch(method: &str, args: &[Value], app: &tauri::AppHandle) -> 
         }
 
         "bug_report" => {
-            use std::io::Write;
-            let log = crate::config::exe_dir().join("error.log");
-            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(log) {
-                let ts = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_secs())
-                    .unwrap_or(0);
-                let _ = writeln!(f, "[{}] {} {}", ts, s(args, 0), s(args, 1));
-            }
+            // 前端崩溃/异常上报统一进 ed_calls.log，不再单独维护 error.log
+            crate::logging::error("bug", format!("{} {}", s(args, 0), s(args, 1)));
             Value::Null
         }
 

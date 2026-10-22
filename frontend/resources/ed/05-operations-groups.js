@@ -135,7 +135,7 @@ const GroupManager = {
             const name = renameInput.value.trim();
             if (!name) return;
             // 把当前所在分类一并传过去：在分类页里建的组要归到该分类下（否则只会出现在"全部"）
-            var r = await ApiHelper.call('create_group', name, (typeof last_group === 'string' ? last_group : ''));
+            var r = await ApiHelper.call('create_group', name, ClassViewState.current || '');
             invalidateClassCache();
             Utils.hideWithMotion(renameOverlay);
             h3.textContent = origTitle;
@@ -295,7 +295,7 @@ const GroupManager = {
         // menu.style.display = 'block';
         Utils.uiBoxDisplayChange(menu,block,true)
         // 与 showContextMenu 一致：坐标要除以缩放比，否则 scale≠100% 时菜单偏移
-        const gsr = (typeof config !== 'undefined' && config && config.scale) ? config.scale/100 : 1;
+        const gsr = (ConfigManager.current && ConfigManager.current.scale) ? ConfigManager.current.scale/100 : 1;
         menu.style.left = `${Math.min(e.pageX, window.innerWidth - menu.offsetWidth) / gsr}px`;
         menu.style.top = `${Math.min(e.pageY, window.innerHeight - menu.offsetHeight) / gsr}px`;
 

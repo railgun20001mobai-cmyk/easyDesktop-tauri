@@ -68,35 +68,12 @@ pub fn pywebview_call(
     app: tauri::AppHandle,
 ) -> Result<Value, String> {
     // 记录前端调用便于排查：
-    // - `__` 开头的是自检/探针方法，调用极少，正式版也记（否则线上出问题没法定位）；
-    // - 其余调用量大的只在 debug 构建记。
-    {
-        use std::io::Write;
-        let is_probe = method.starts_with("__");
-        #[cfg(not(debug_assertions))]
-        let should_log = is_probe;
-        #[cfg(debug_assertions)]
-        let should_log = is_probe
-            || !matches!(
-                method.as_str(),
-                // 高频调用，打日志会把排查信息淹掉
-                "mouse_state" | "drag_posMoveAction"
-            );
-        if should_log {
-            crate::log_rotate_if_needed();
-            if let Ok(mut f) = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(crate::config::exe_dir().join("ed_calls.log"))
-            {
-                let ts = crate::win32::local_time_str();
-                if is_probe {
-                    let _ = writeln!(f, "[{}] {} {:?}", ts, method, args);
-                } else {
-                    let _ = writeln!(f, "[{}] {}", ts, method);
-                }
-            }
-        }
+    // - `__` 开头的是自检/探针方法，调用极少，记 INFO（正式版也保留）；
+    // - 其余调用只在 DEBUG 级别记录，且跳过高频方法，避免把日志淹掉。
+    if method.starts_with("__") {
+        crate::logging::info("ipc", format!("{} {:?}", method, args));
+    } else if !matches!(method.as_str(), "mouse_state" | "drag_posMoveAction") {
+        crate::logging::debug("ipc", &method);
     }
     Ok(dispatch(&method, &args, &app))
 }

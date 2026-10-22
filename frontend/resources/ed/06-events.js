@@ -454,10 +454,9 @@ const EventManager = {
                     if(this.checked==true){
                         image_preview()
                     }else{
-                        preview_runing = false
+                        PreviewState.running = false
                     }
                 }else if(toggleId === "blurToggle"){
-                    if(typeof config !== "undefined" && config) config.blur_bg = this.checked;
                     applyGlassSettings();   // 内部会调 set_blur_effect，并按依赖规则刷新灰显
                 }else if(toggleId === "showHiddenToggle"){
                     console.log("showHiddenToggle")
@@ -522,7 +521,7 @@ const EventManager = {
             const row = document.getElementById('hotkey_row');
             const el = DOMCache.get('hotkey_show');
             if (!el || !row) return;
-            const c = cfg || (typeof config === 'object' && config) || {};
+            const c = cfg || ConfigManager.current || {};
             row.style.display = (String(c.cf_type) === '4') ? '' : 'none';
             if (hkCapturing) return;   // 录制中不要覆盖正在按的组合
             el.value = prettyHotkey(c.cf_hotkey);
@@ -555,7 +554,6 @@ const EventManager = {
                 (async function(){
                     await ApiHelper.updateConfig('cf_hotkey', combo);
                     await ApiHelper.updateConfig('cf_type', '4');
-                    if(typeof config === 'object' && config){ config.cf_hotkey = combo; config.cf_type = '4'; }
                 })().catch(function(e){ console.error('[ed] 保存组合热键失败', e); });
             }else{
                 el.blur();
@@ -595,18 +593,16 @@ const EventManager = {
                 if(this.value=="4"){
                     // 选「自定义」：不再弹对话框，直接亮出组合热键那一行并开始录制
                     await ApiHelper.updateConfig('cf_type', this.value);
-                    if(typeof config === 'object' && config) config.cf_type = '4';
                     window.showHotkeyText();
                     hkStart();
                     return
                 }
                 ApiHelper.updateConfig('cf_type', this.value);
-                if(typeof config === 'object' && config) config.cf_type = String(this.value);
                 window.showHotkeyText();
             }catch(e){
-                config = await ApiHelper.getConfig()
-                this.value = config.cf_type
-                window.showHotkeyText(config);
+                ConfigManager.current = await ApiHelper.getConfig()
+                this.value = ConfigManager.current.cf_type
+                window.showHotkeyText(ConfigManager.current);
             }
         });
 
@@ -691,7 +687,6 @@ const EventManager = {
                 await ApiHelper.updateConfig("ms_ef", parseInt(this.value));
                 // 直接改背景图层的模糊变量即可：不必走整套 applyBackgroundSettings，
                 // 那会顺带重设一次系统亚克力，拖动时整窗会闪
-                if(typeof config !== "undefined" && config) config.ms_ef = parseInt(this.value);
                 document.body.style.setProperty('--ed-bg-blur', `${parseInt(this.value)}px`);
             });
         }
@@ -702,8 +697,8 @@ const EventManager = {
             await ApiHelper.updateConfig("ms_ef", 50);
             blurSlider.value = 50;
             blurValue.textContent = '50';
-            config = await ApiHelper.getConfig();
-            ThemeManager.applyBackgroundSettings(config);
+            ConfigManager.current = await ApiHelper.getConfig();
+            ThemeManager.applyBackgroundSettings(ConfigManager.current);
         });
 
         DOMCache.get('bgCustomBtn').addEventListener('click', async () => {
@@ -714,7 +709,7 @@ const EventManager = {
                     await ApiHelper.updateConfig("bg", bgUrl);
                     await ApiHelper.updateConfig("ms_ef", 0);
                     await ApiHelper.updateConfig("bgType", "1");
-                    config = await ApiHelper.getConfig();
+                    ConfigManager.current = await ApiHelper.getConfig();
                     setTimeout(() => {
                         window.location.reload();
                         // ThemeManager.applyBackgroundSettings(config);
@@ -742,7 +737,6 @@ const EventManager = {
             DOMCache.get("blur_ef_input_show").innerText = `毛玻璃效果强度：${value}%`;
             ApiHelper.updateConfig("blur_effect", Math.floor(100-value));
             // 立刻生效：面板背景透明度 + 系统亚克力一起刷新（只写配置是不会变的）
-            if(typeof config !== "undefined" && config) config.blur_effect = Math.floor(100-value);
             // CSS 层面（透明模式的薄纱/增强模式的贴面浓度）拖动中立刻反馈；
             // 系统亚克力的磨砂浓度等松手后再同步——每个 input 事件都重设会让整窗闪
             applyGlassSettings(null, true);
@@ -752,7 +746,6 @@ const EventManager = {
         // 背景类型决定毛玻璃能不能生效，改它要重算生效状态和灰显
         const bgTypeSel = DOMCache.get('bgType_toggle');
         if(bgTypeSel) bgTypeSel.addEventListener('change', function(){
-            if(typeof config !== "undefined" && config) config.bgType = this.value;
             applyGlassSettings();
         });
     },
@@ -781,7 +774,7 @@ const EventManager = {
                 if (DOMCache.get("groupDeleteConfirm").style.display === "flex") return;
                 if(document.activeElement.id == "categoryInput") return
                 if(document.getElementById("fileSelectionDialog").style.display!="none")return;
-                if(window_state==false)return
+                if(AppState.panelHidden)return
 
                 if (searchInput && !event.ctrlKey && !event.altKey && !event.metaKey && event.key.length === 1) {
                     searchInput.focus();
@@ -813,7 +806,7 @@ const EventManager = {
         document.addEventListener('contextmenu', (e) => {
             // this.handleBlankContextMenu(e);
             console.log(e.target)
-            if(config.df_dir==AppState.currentPath){
+            if(ConfigManager.current && ConfigManager.current.df_dir==AppState.currentPath){
                 console.log("当前目录")
                 // document.getElementById("menuNewGroup").style.display="block"
                 // document.getElementById("menuAddToGroup").style.display="block"
@@ -847,7 +840,7 @@ const EventManager = {
             const blankMenu = DOMCache.get('blankMenu');
             // blankMenu.style.display = 'block';
             Utils.uiBoxDisplayChange(blankMenu,block,true)
-            const bsr = (typeof config !== 'undefined' && config && config.scale) ? config.scale/100 : 1;
+            const bsr = (ConfigManager.current && ConfigManager.current.scale) ? ConfigManager.current.scale/100 : 1;
             blankMenu.style.left = `${Math.min(e.pageX, window.innerWidth - blankMenu.offsetWidth) / bsr}px`;
             blankMenu.style.top = `${Math.min(e.pageY, window.innerHeight - blankMenu.offsetHeight) / bsr}px`;
         }
@@ -878,7 +871,7 @@ const EventManager = {
     },
  
     async setIcon(){
-        r=await ApiHelper.call("setIcon", AppState.selectedFile.filePath,AppState.selectedFile.edit_ico==undefined)
+        const r = await ApiHelper.call("setIcon", AppState.selectedFile.filePath,AppState.selectedFile.edit_ico==undefined)
         if(r["success"]==true){
             NavigationManager.refreshCurrentPath(false,false,false,true)
         }else{

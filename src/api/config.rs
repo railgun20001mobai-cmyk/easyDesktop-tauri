@@ -37,12 +37,15 @@ pub(super) fn dispatch(method: &str, args: &[Value], app: &tauri::AppHandle) -> 
                 let enable = data.as_bool().unwrap_or(false);
                 let r = if enable { al.enable() } else { al.disable() };
                 match r {
-                    Ok(()) => crate::log(&format!(
-                        "autostart set {} ok, is_enabled={:?}",
-                        enable,
-                        al.is_enabled()
-                    )),
-                    Err(e) => crate::log_error(
+                    Ok(()) => crate::logging::info(
+                        "autostart",
+                        format!(
+                            "autostart set {} ok, is_enabled={:?}",
+                            enable,
+                            al.is_enabled()
+                        ),
+                    ),
+                    Err(e) => crate::logging::error(
                         "autostart",
                         format!("set {} failed: {}", enable, e),
                     ),

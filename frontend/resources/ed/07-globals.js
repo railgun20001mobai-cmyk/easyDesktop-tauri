@@ -1,16 +1,4 @@
-// ========== 全局变量 ==========
-let files_data = [];
-let selectedFile = null;
-let contextMenu = null;
-let dealing = false;
-let currentPath = '';
-let pathHistory = [];
-let currentHistoryIndex = -1;
-let timer = null;
-let db_click_action = false;
-let in_edit = false;
-let window_state = false
-const scripts_type = CONSTANTS.SCRIPT_TYPES;
+// ========== DOM 缓存 ==========
 const blankMenu = DOMCache.get('blankMenu');
 const newFileOverlay = DOMCache.get('newFileOverlay');
 const newFileTypeSelect = DOMCache.get('newFileTypeSelect');
@@ -28,12 +16,10 @@ function getFileType(fileName, fileType) {
  * 显示文件选择对话框
  * @returns {Promise<Object>} 包含选中文件列表和分类名的对象
  */
-/* 当前打开的「分类设置」对话框的取消入口；没打开时为 null */
-let _fileSelectorCancel = null;
 /* Rust 侧 hide_panel() 在真正隐藏窗口前 eval 这个，收起面板即取消对话框 */
 window.edOnPanelHide = function(){
-    panel_hidden = true;
-    if(_fileSelectorCancel) _fileSelectorCancel();
+    AppState.panelHidden = true;
+    if(AppState.fileSelectorCancel) AppState.fileSelectorCancel();
     cancelImagePreview();
     schedulePreviewCacheClear();
 };
@@ -46,7 +32,7 @@ async function showFileSelectionDialog(class_name=null) {
         let list_data = []
         if(class_name!=null){
             let class_data = await ApiHelper.call('read_class', class_name)
-            for(item of class_data.files){
+            for(const item of class_data.files){
                 list_data.push(Utils.generateFileId(item.filePath))
             }
             del_btn.style.display="block"
@@ -100,7 +86,7 @@ async function showFileSelectionDialog(class_name=null) {
            否则下次唤起会停在"分类设置还开着、但外面的世界已经换了"的状态。
            这里就登记好（handleCancel 是函数声明，已提升），不等列表渲染完，
            免得渲染那次 await 里收起面板会漏掉钩子 */
-        _fileSelectorCancel = handleCancel;
+        AppState.fileSelectorCancel = handleCancel;
 
         try {
             // 获取文件信息
@@ -155,7 +141,7 @@ async function showFileSelectionDialog(class_name=null) {
                 });
 
                 // 图标：列表可能上百项，离屏的先不解码，打开对话框更快
-                icon = document.createElement('img');
+                const icon = document.createElement('img');
                 icon.loading = 'lazy';
                 icon.decoding = 'async';
                 icon.src = item.fileType=="应用组"?"./resources/imgs/group.png":item.ico;
@@ -193,7 +179,7 @@ async function showFileSelectionDialog(class_name=null) {
 
         // 取消按钮事件
         function handleCancel() {
-            _fileSelectorCancel = null;
+            AppState.fileSelectorCancel = null;
             Utils.hideWithMotion(dialogContainer);
             UIUtils.enableScroll();
             resolve({files_data: [], title: ''});
@@ -230,7 +216,7 @@ async function showFileSelectionDialog(class_name=null) {
             }
 
             categoryErrorMsg.style.display = 'none';
-            _fileSelectorCancel = null;
+            AppState.fileSelectorCancel = null;
             Utils.hideWithMotion(dialogContainer);
             UIUtils.enableScroll();
             resolve({files_data: selectedItems, title: categoryTitle});
@@ -240,7 +226,7 @@ async function showFileSelectionDialog(class_name=null) {
         // 点击对话框外部关闭
         function handleOverlayClick(e) {
             if (e.target === overlay) {
-                _fileSelectorCancel = null;
+                AppState.fileSelectorCancel = null;
                 Utils.hideWithMotion(dialogContainer);
                 UIUtils.enableScroll();
                 resolve({files_data: [], title: ''});
@@ -286,7 +272,7 @@ async function run_fileSelector_search(){
     }else{
         let result =  await SearchManager.performSearch(input_box.value,false)
         // 转为列表
-        result_list = []
+        const result_list = []
         for(let i of result){
             result_list.push(i.filePath)
         }
@@ -340,82 +326,44 @@ function showDeleteConfirm() {
     EventManager.showDeleteConfirm();
 }
 
-async function push(fData = null, useLoadDir = false, path = '') {
-    console.log("11")
-    let pushAllowIds = null;
-    try {
-        if (fData === null) {
-            let result;
-            if((useLoadDir==true && (path=="" || path=="desktop")) || fData==null){
-                document.getElementById("box1").style.display = "block"
-                // 【闪屏修复】原先在 render 之前对旧 DOM 做过滤（render 会重建 DOM，等于白做）
-                pushAllowIds = await getClassIdSet(last_group);
-            }else{
-                document.getElementById("box1").style.display = "none"
-            }
-            render_class_btn()
-            fit_btnBar()
-            if (useLoadDir && path) {
-                result = await ApiHelper.getFileInfo(path);
-                AppState.currentPath = path;
-                AppState.setFiles(result.data);
-            } else {
-                result = await ApiHelper.getFileInfo("desktop");
-                AppState.setFiles(result.data);
-            }
-            fData = result.data;
-        }
-
-        // 同步全局变量
-        files_data = fData;
-        currentPath = AppState.currentPath;
-
-        await fileRenderer.render(fData,null,true,pushAllowIds);
-        AppState.contextMenu = DOMCache.get('contextMenu');
-
-    } catch (error) {
-        window.pywebview.api.bug_report("push", error.toString()+"\n"+error.stack.toString());
-        console.error(error);
-    }
-}
-let preview_runing = false
-let preview_gen = 0
-let panel_hidden = false
-let _previewCacheClearTimer = null
-// 【性能优化】图片缩略图结果缓存：重渲染时直接复用，不再为每个图片重复一次
-// 「PIL 解码 + 缩放 + JPEG 编码 + base64」的跨桥 IPC（原先每次刷新都全量重算）
-const imgPreviewCache = new Map()
-let imgPreviewCacheBytes = 0
-// base64 在 JS 里按 UTF-16 计，8M 字符约 16MB
+/* 图片缩略图状态：缓存 + 一次预览循环的代际号。
+   gen 变化后旧的异步循环会在下一个检查点自行退出。 */
 const IMG_PREVIEW_CACHE_MAX_CHARS = 8 * 1024 * 1024
+const PreviewState = {
+    running: false,
+    gen: 0,
+    cacheClearTimer: null,
+    cache: new Map(),
+    cacheBytes: 0,
+}
 
 function clearImgPreviewCache(){
-    imgPreviewCache.clear()
-    imgPreviewCacheBytes = 0
+    PreviewState.cache.clear()
+    PreviewState.cacheBytes = 0
 }
 
-function imgPreviewCacheGet(key){
-    if(!imgPreviewCache.has(key)) return undefined
-    const value = imgPreviewCache.get(key)
+function previewCacheGet(key){
+    if(!PreviewState.cache.has(key)) return undefined
+    const value = PreviewState.cache.get(key)
     // Map 插入序当 LRU：命中后挪到队尾
-    imgPreviewCache.delete(key)
-    imgPreviewCache.set(key, value)
+    PreviewState.cache.delete(key)
+    PreviewState.cache.set(key, value)
     return value
 }
 
-function imgPreviewCacheSet(key, value){
-    if(imgPreviewCache.has(key)){
-        const old = imgPreviewCache.get(key)
-        imgPreviewCacheBytes -= old ? old.length : 0
-        imgPreviewCache.delete(key)
+function previewCacheSet(key, value){
+    if(PreviewState.cache.has(key)){
+        const old = PreviewState.cache.get(key)
+        PreviewState.cacheBytes -= old ? old.length : 0
+        PreviewState.cache.delete(key)
     }
-    imgPreviewCache.set(key, value)
-    if(value) imgPreviewCacheBytes += value.length
-    while(imgPreviewCacheBytes > IMG_PREVIEW_CACHE_MAX_CHARS && imgPreviewCache.size > 1){
-        const oldest = imgPreviewCache.keys().next().value
-        const old = imgPreviewCache.get(oldest)
-        imgPreviewCacheBytes -= old ? old.length : 0
-        imgPreviewCache.delete(oldest)
+    PreviewState.cache.set(key, value)
+    if(value) PreviewState.cacheBytes += value.length
+    while(PreviewState.cacheBytes > IMG_PREVIEW_CACHE_MAX_CHARS && PreviewState.cache.size > 1){
+        const oldest = PreviewState.cache.keys().next().value
+        const old = PreviewState.cache.get(oldest)
+        PreviewState.cacheBytes -= old ? old.length : 0
+        PreviewState.cache.delete(oldest)
     }
 }
 
@@ -427,16 +375,16 @@ function restorePreviewIcons(){
 }
 
 function cancelImagePreview(){
-    preview_gen++
-    preview_runing = false
+    PreviewState.gen++
+    PreviewState.running = false
 }
 
 function schedulePreviewCacheClear(){
-    if(_previewCacheClearTimer) clearTimeout(_previewCacheClearTimer)
+    if(PreviewState.cacheClearTimer) clearTimeout(PreviewState.cacheClearTimer)
     // 短暂收起再呼出时保留缓存；隐藏超过 15 秒才真正释放
-    _previewCacheClearTimer = setTimeout(async () => {
-        _previewCacheClearTimer = null
-        if(!panel_hidden) return
+    PreviewState.cacheClearTimer = setTimeout(async () => {
+        PreviewState.cacheClearTimer = null
+        if(!AppState.panelHidden) return
         cancelImagePreview()
         restorePreviewIcons()
         clearImgPreviewCache()
@@ -445,10 +393,10 @@ function schedulePreviewCacheClear(){
 }
 
 window.edOnPanelShow = function(){
-    panel_hidden = false
-    if(_previewCacheClearTimer){
-        clearTimeout(_previewCacheClearTimer)
-        _previewCacheClearTimer = null
+    AppState.panelHidden = false
+    if(PreviewState.cacheClearTimer){
+        clearTimeout(PreviewState.cacheClearTimer)
+        PreviewState.cacheClearTimer = null
     }
     // 隐藏超过 15 秒会清掉缓存并还原图标；若此次呼出走的是“数据没变”快路径，
     // 不会触发重渲染，需要在这里把预览图补回来
@@ -456,25 +404,25 @@ window.edOnPanelShow = function(){
 }
 
 async function image_preview() {
-    if(preview_runing) return;
-    preview_runing = true;
-    const gen = ++preview_gen;
+    if(PreviewState.running) return;
+    PreviewState.running = true;
+    const gen = ++PreviewState.gen;
     try{
         let config = await ApiHelper.getConfig()
-        if(gen !== preview_gen) return;
+        if(gen !== PreviewState.gen) return;
         if(config["imgpre"]==false)return
         for(let file of AppState.files_data){
-            if(gen !== preview_gen) return;
+            if(gen !== PreviewState.gen) return;
             if(![".png",".jpg",".jpeg",".bmp",".gif"].includes(file.fileType)) continue;
             const el = document.getElementById(Utils.generateFileId(file.filePath));
             // 元素不存在（未渲染 / 已被过滤）时跳过，避免原代码里 te 为 null 直接抛错
             // 中断整个预览循环
             if(!el || !el.children || !el.children[1]) continue;
-            let view_img = imgPreviewCacheGet(file.filePath);
+            let view_img = previewCacheGet(file.filePath);
             if(view_img === undefined){
                 view_img = await ApiHelper.call("get_imageBase64", file.filePath);
-                if(gen !== preview_gen) return;
-                imgPreviewCacheSet(file.filePath, view_img || null);
+                if(gen !== PreviewState.gen) return;
+                previewCacheSet(file.filePath, view_img || null);
             }
             if(view_img){
                 const iconEl = el.children[1];
@@ -485,7 +433,7 @@ async function image_preview() {
     }catch(e){
         console.log("image_preview error")
     }finally{
-        if(gen === preview_gen) preview_runing = false;
+        if(gen === PreviewState.gen) PreviewState.running = false;
     }
 }
 async function change_cl_state(filePath, cl){
@@ -514,7 +462,6 @@ function navigateBack() {
         AppState.currentHistoryIndex--;
         const path = AppState.pathHistory[AppState.currentHistoryIndex];
         AppState.currentPath = path;
-        currentPath = path;
         NavigationManager.navigateTo(path);
     }
 }
@@ -524,7 +471,6 @@ function navigateForward() {
         AppState.currentHistoryIndex++;
         const path = AppState.pathHistory[AppState.currentHistoryIndex];
         AppState.currentPath = path;
-        currentPath = path;
         NavigationManager.navigateTo(path);
     }
 }
@@ -632,8 +578,8 @@ async function load_theme(theme,from_fit) {
             await ApiHelper.call('load_blur_effect', 'Aero');
         }
         ThemeManager.now_theme = theme;
-        config = await ApiHelper.getConfig();
-        ThemeManager.applyBackgroundSettings(config);
+        ConfigManager.current = await ApiHelper.getConfig();
+        ThemeManager.applyBackgroundSettings(ConfigManager.current);
         return true;
 
 }
@@ -668,7 +614,7 @@ function refreshRangeFills(){
 })();
 
 function applyGlassSettings(cfg, silent){
-    if(!cfg) cfg = (typeof config !== "undefined" && config) ? config : null;
+    if(!cfg) cfg = ConfigManager.current || null;
     if(!cfg) return;
     const strength = Math.max(10, Math.min(100, Math.floor(100 - (Number(cfg.blur_effect) || 0))));
     const bgNormal = String(cfg.bgType) === "1";          // 背景类型 = 正常
@@ -767,7 +713,7 @@ async function load_bgType(tid, strength){
     // 设置/清空 --ed-bg-image），这里不再重复处理。
 }
 async function fit_window() {
-    if(setting_mode==false){
+    if(AppState.settingsMode==false){
         await ApiHelper.call('fit_window_start');
     }else{
         await ApiHelper.call('fit_window_end');
@@ -784,9 +730,8 @@ function setPriorityBtnActive(active) {
         btn.innerText = '启用快速自启';
     }
 }
-let setting_mode = false
 async function disable_settings() {
-    setting_mode = true
+    AppState.settingsMode = true
     DOMCache.get("fit_btn").innerText = "点击完成调整";
     // DOMCache.get("fit_btn").onclick = async function () {
     //     await ApiHelper.call('fit_window_end');
@@ -862,13 +807,5 @@ async function change_default_dir(path = null) {
     } catch (error) {
         ApiHelper.call('unlock_window_visibility');
         console.error('更改默认目录失败:', error);
-    }
-}
-async function check_dirChange(){
-    var now_data = JSON.stringify(files_data);
-    var new_data = await ApiHelper.getFileInfo(AppState.currentPath).data
-    var new_data = JSON.stringify(new_data.data)
-    if(now_data!=new_data){
-        NavigationManager.refreshCurrentPath()
     }
 }

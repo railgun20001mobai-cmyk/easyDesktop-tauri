@@ -1,5 +1,7 @@
 // ========== 导航管理器 ==========
 const NavigationManager = {
+    /* 桌面路径一次会话内不变，缓存跨桥结果；清理缓存时置 null */
+    desktopPathCache: null,
     async navigateTo(path) {
         // 【闪屏修复】先在渲染前算好过滤集合，避免渲染完再过滤造成的中间态
         const atRoot = (path=="/" || path=="" || path=="desktop" || path==document.getElementById("b2d").dataset.path);
@@ -8,7 +10,7 @@ const NavigationManager = {
         }else{
             document.getElementById("box1").style.display="none"
         }
-        const navAllowIds = atRoot ? await getClassIdSet(last_group) : null;
+        const navAllowIds = atRoot ? await getClassIdSet(ClassViewState.current) : null;
         fit_btnBar()
 
         if (path === AppState.currentPath) {
@@ -52,7 +54,7 @@ const NavigationManager = {
 
             // 【闪屏修复】渲染前先取到当前分类的成员集合，条目出生即为正确显示状态，
             // 不再需要「先渲染全部 → 再隐藏不匹配项 → 揭开遮盖」这套会带来闪屏的时序
-            const allowIds = await getClassIdSet(last_group);
+            const allowIds = await getClassIdSet(ClassViewState.current);
             await fileRenderer.render(result.data,null,ani,allowIds);
             // 全量渲染不带搜索过滤，生效键随之清零；框里若还留着关键词就立刻补回过滤
             AppState.searchKey = "";
@@ -119,7 +121,7 @@ const SearchManager = {
             // 注：有关键词时仍是全范围搜索（不受分类限制），这里只恢复「无输入」时的底图。
             if(render==true){
                 AppState.searchKey = "";
-                await fileRenderer.render(AppState.files_data,null,false,await getClassIdSet(last_group));
+                await fileRenderer.render(AppState.files_data,null,false,await getClassIdSet(ClassViewState.current));
             }
             return;
         }
@@ -311,6 +313,8 @@ const ThemeManager = {
 
 // ========== 配置管理器 ==========
 const ConfigManager = {
+    /* 最近一次读到的完整配置：设置项改完立刻按它重绘，省掉反复 get_config */
+    current: null,
     async updateScale(value) {
         const realScale = value / 100;
         const container = DOMCache.get('content_box');
