@@ -5,7 +5,7 @@
 把桌面图标收进一块贴边面板，桌面本身保持干净。
 鼠标移到屏幕角落（或按自定义热键）唤出面板，打开文件、进入目录、分类筛选、应用组、新建与重命名都在这一处完成。
 
-![license](https://img.shields.io/badge/license-GPL--3.0-green) ![platform](https://img.shields.io/badge/platform-Windows-blue) ![framework](https://img.shields.io/badge/Tauri-v2-orange) ![version](https://img.shields.io/badge/version-1.2.0-blueviolet)
+![license](https://img.shields.io/badge/license-GPL--3.0-green) ![platform](https://img.shields.io/badge/platform-Windows-blue) ![framework](https://img.shields.io/badge/Tauri-v2-orange) ![version](https://img.shields.io/badge/version-1.2.1-blueviolet)
 
 </div>
 
@@ -38,7 +38,7 @@
 
 ## 🚀 快速开始
 
-1. 到 [Releases](https://github.com/railgun20001mobai-cmyk/easyDesktop-tauri/releases) 下载 `easyDesktop-tauri_1.2.0_x64-setup.exe` 安装
+1. 到 [Releases](https://github.com/railgun20001mobai-cmyk/easyDesktop-tauri/releases) 下载 `easyDesktop-tauri_1.2.1_x64-setup.exe` 安装
 2. 启动后面板默认停在屏幕角落，鼠标移到左下角唤出，移开自动收起
 3. 想彻底腾出桌面：桌面右键 → 查看 → 取消勾选"显示桌面图标"，之后所有桌面文件都通过面板访问
 4. 程序常驻托盘，点托盘图标或齿轮进设置；卸载用安装目录里的 `uninstall.exe`
@@ -149,7 +149,7 @@
 
 ## 🏗️ 技术实现
 
-JS 侧通过 `pywebview_shim.js` 兼容层把调用转发到 Rust 的单一入口 `pywebview_call`，由它按方法名分发到约 43 个后端方法，因此前后端行为可以与上游 Python 版逐条对照。窗口权限只声明 `core:default`（见 `capabilities/default.json`），不注册额外插件权限、不加载远程内容；由于桌面文件可能位于任意磁盘位置，本地资源协议（`asset:protocol`）的路径范围放得较宽。
+JS 侧通过 `pywebview_shim.js` 兼容层把调用转发到 Rust 的单一入口 `pywebview_call`，由它按方法名分发到约 50 个后端方法，因此前后端行为可以与上游 Python 版逐条对照。窗口权限只声明 `core:default`（见 `capabilities/default.json`），不注册额外插件权限、不加载远程内容；由于桌面文件可能位于任意磁盘位置，本地资源协议（`asset:protocol`）的路径范围放得较宽。
 
 动效统一走 `theme/frame.css` 里的 motion token（`--md-motion-dur-*` / `--md-motion-ease-*`）；面板进出与图标重排的时长在 Rust / JS 侧各有一份对应常量（`PANEL_IN_MS / PANEL_OUT_MS`、`REORDER_MS`），改时长需要一并同步。
 
@@ -157,7 +157,7 @@ JS 侧通过 `pywebview_shim.js` 兼容层把调用转发到 Rust 的单一入�
 .
 ├── src/
 │   ├── main.rs        窗口、角落唤出与自动收起、热键、托盘、面板动画
-│   ├── api.rs         pywebview_call 分发：文件操作、配置、分类、应用组
+│   ├── api/           pywebview_call 分发：config / files / classes / groups / window / system
 │   ├── files.rs       目录扫描、排序持久化、新建 / 重命名 / 删除
 │   ├── icons.rs       系统图标提取与缓存、自定义图标
 │   ├── preview.rs     图片缩略图
@@ -166,7 +166,7 @@ JS 侧通过 `pywebview_shim.js` 兼容层把调用转发到 Rust 的单一入�
 ├── frontend/
 │   ├── easyFileDesk.html       面板骨架与内联样式
 │   ├── pywebview_shim.js       调用桥适配层
-│   ├── resources/ed.js         前端主逻辑：渲染、拖拽、框选、分类、应用组、主题
+│   ├── resources/ed/           前端主逻辑（01-09 按序加载）
 │   ├── resources/file_icos/    文件类型图标
 │   ├── theme/frame.css         布局与动效
 │   └── theme/theme.css         配色变量

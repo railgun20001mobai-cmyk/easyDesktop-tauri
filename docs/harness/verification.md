@@ -14,7 +14,8 @@ cargo test
 cargo check
 ```
 
-- 单测覆盖排序合并、拼音索引、版本来源；当前 11 个用例必须全过。
+- 单测覆盖排序合并、拼音索引、配置反序列化、版本来源；当前 15 个用例必须全过。
+- 前端拆分后先逐文件 `node --check frontend/resources/ed/*.js`，再按下方真机清单验证加载顺序。
 - 若报 `failed to read plugin permissions ... D:\easyDesktop-tauri\...`：这是搬家前 `target/` 的旧绝对路径，
   执行 `cargo clean`（只删构建缓存）后重跑。
 - 单测不覆盖窗口/前端，不能替代第 2 节真机清单。

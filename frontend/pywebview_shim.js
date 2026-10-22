@@ -1,7 +1,7 @@
 /**
  * pywebview 兼容层
  *
- * 前端 ed.js 完全沿用旧写法：window.pywebview.api.方法名(...参数)。
+ * 前端脚本完全沿用旧写法：window.pywebview.api.方法名(...参数)。
  * 这里把它转发到 Tauri 的统一命令 pywebview_call(method, args)，
  * 从而做到「前端零改动」地从 Python 迁移到 Rust。
  */
@@ -74,8 +74,8 @@
     window.__ED_TAURI__ = true;
     console.log("[shim] pywebview 兼容层已就绪");
 
-    // 关键：pywebview 会在桥接就绪后派发 pywebviewready，ed.js 的整个初始化都挂在这个事件上。
-    // 必须等 DOM 解析完（ed.js 已注册监听）之后再派发。
+    // 关键：pywebview 会在桥接就绪后派发 pywebviewready，前端脚本的整个初始化都挂在这个事件上。
+    // 必须等 DOM 解析完（脚本已注册监听）之后再派发。
     function fireReady() {
         try {
             window.dispatchEvent(new Event("pywebviewready"));

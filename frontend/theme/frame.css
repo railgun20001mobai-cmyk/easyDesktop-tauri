@@ -98,7 +98,7 @@ body {
    - 非对称时长：进场比退场长（200ms / 150ms）——新内容有时间"落下来"，退出干脆利落
    - 强调型缓动：进场减速 cubic-bezier(0.2,0,0,1)；退场加速 cubic-bezier(0.3,0,0.8,0.15)
    - 所有时长/曲线集中在这里，改一处全局节奏统一
-   注意：ed.js 的 uiBoxDisplayChange() 里有一份对应的毫秒数字（JS 读不到 CSS 变量），
+   注意：01-core.js 的 uiBoxDisplayChange() 里有一份对应的毫秒数字（JS 读不到 CSS 变量），
    调这里的话记得同步改那边。 */
 :root {
   --md-motion-dur-enter: 200ms;
@@ -1251,7 +1251,7 @@ body.ed-panel-out {
 
 /* ===== 文件列表：子项依次升起 =====
    只用 transform/opacity，在合成器上跑；延迟最多 96ms，保证在容器动画
-   结束前收尾（ed.js 里 fade-in-up 等 200ms 就摘类）。 */
+   结束前收尾（01-core.js 里 fade-in-up 等 200ms 就摘类）。 */
 @keyframes mdItemIn {
   0% {
     opacity: 0.35;
@@ -1413,7 +1413,7 @@ body.ed-panel-away {
 .theme-settings-panel.panel-in > *:nth-child(n + 5) { animation-delay: 120ms; }
 
 /* ===== 多选 + 自绘拖拽 =====
-   拖拽不再用 HTML5 原生 DnD（见 ed.js 末尾的 DragManager），下面这些类都是它加的。
+   拖拽不再用 HTML5 原生 DnD（见 09-interactions.js 末尾的 DragManager），下面这些类都是它加的。
    时长与曲线一律走上面的 MD3 token：进场减速、退场加速、选中用弹簧。 */
 
 /* 选中态（Ctrl 点击 / Shift 框选都打这个类）：强调色描边 + 一层状态色，勾上的瞬间轻弹一下 */

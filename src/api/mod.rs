@@ -1,6 +1,6 @@
 //! pywebview API 兼容层
 //!
-//! 前端 ed.js 完全不用改：它通过 `window.pywebview.api[方法名](...参数)` 调用后端。
+//! 前端脚本完全不用改：它通过 `window.pywebview.api[方法名](...参数)` 调用后端。
 //! 这里用一个统一的 `pywebview_call(method, args)` 命令接收并分发，
 //! 具体方法按领域拆到 config / files / classes / groups / window / system 子模块。
 
