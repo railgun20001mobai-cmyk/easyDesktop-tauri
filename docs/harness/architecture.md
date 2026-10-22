@@ -4,7 +4,7 @@
 
 - 单窗口 Windows 桌面面板：Rust 侧负责窗口生命周期、热区、Win32、文件系统、配置、图标、缩略图和
   WebView2 内存；前端是上游 pywebview 版原样沿用的原生 HTML/CSS/JS。
-- 上游为 `vicent-yx/easyDesktop`（Python + pywebview，基线 2.9.0），本项目独立编号（当前 1.2.1）。
+- 上游为 `vicent-yx/easyDesktop`（Python + pywebview，基线 2.9.0），本项目独立编号（当前 1.2.2）。
   上游源码在 `D:\EasyDesktop\easyDesktop-src`，只作对照，不在本仓库修改。
 
 ## 调用链
@@ -29,7 +29,8 @@ frontend/resources/ed/*.js → window.pywebview.api.<method>(...args)
 
 | 文件 | 负责 | 注意 |
 | --- | --- | --- |
-| `src/main.rs` | 窗口生命周期、角落热区轮询、焦点补偿、全屏抑制、托盘/热键、滑动动画、可见性锁、日志 | 状态机核心，改动必须真机验证 |
+| `src/main.rs` | 窗口生命周期、角落热区轮询、焦点补偿、全屏抑制、托盘/热键、滑动动画、可见性锁 | 状态机核心，改动必须真机验证 |
+| `src/logging.rs` | 分级日志：`Debug/Info/Warn/Error`、`ED_LOG_LEVEL` 过滤、512KB 轮转 | 业务模块只调 `logging::*`，不要自己开文件写日志 |
 | `src/api/mod.rs` | IPC 入口、调用日志、参数归一化、按领域路由 | 50 个方法，只做分发与薄适配 |
 | `src/api/config.rs` | bootstrap、配置读写、版本、开机自启 | 自启要真正写系统项 |
 | `src/api/files.rs` | 文件列表、导航、新建/改名/删除/复制粘贴、默认目录 | 重逻辑放 `files.rs` |
@@ -57,7 +58,7 @@ frontend/resources/ed/*.js → window.pywebview.api.<method>(...args)
 | `04-navigation.js` | `NavigationManager`、`SearchManager`、`ThemeManager`、`ConfigManager` |
 | `05-operations-groups.js` | `FileOperationManager`、`GroupManager` |
 | `06-events.js` | `EventManager` 与各类 DOM 事件绑定 |
-| `07-globals.js` | 全局变量与全局函数 |
+| `07-globals.js` | DOM 缓存、预览状态与全局函数 |
 | `08-init-classes.js` | 启动初始化、分类缓存与切换 |
 | `09-interactions.js` | `ItemSelection`、`DragManager`、`Marquee`、保存顺序 |
 
@@ -73,7 +74,8 @@ frontend/resources/ed/*.js → window.pywebview.api.<method>(...args)
   - `user_class.json`：`{ "<dir_key>": { "<分类名>": [ { filePath, fileName, fileType, isGroup? } ] } }`。
   - `user_groups.json`：`{ "<groupId>": { "name": "组名", "files": [ { filePath, fileName, ico, ... } ] } }`。
   - `cl_data.json`：标星数据。
-  - `desktopICO/`、`background/`：图标缓存与自定义背景；`ed_calls.log`：运行日志（512KB 轮转）。
+  - `desktopICO/`、`background/`：图标缓存与自定义背景；`ed_calls.log`：分级运行日志（默认 debug 构建
+    记 Debug、release 记 Info；`ED_LOG_LEVEL=debug|info|warn|error` 可覆盖；512KB 轮转）。
 - `write_json()` 先写 `.tmp` 再 rename；JSON 损坏时改名为
   `<原名>.corrupt-bak-YYYYMMDD-HHMMSS.json` 再回退默认值，同一秒冲突追加序号，不许静默覆盖现场。
 - 主配置是类型化 `Config`：已知字段有明确类型，未知字段保存在 `extra`，前端新增设置项不会被反序列化丢掉。
@@ -93,7 +95,11 @@ frontend/resources/ed/*.js → window.pywebview.api.<method>(...args)
 - 热区武装：收起后鼠标必须先离开热区再进入，避免“收起末尾闪一下”。
 - 焦点：后台进程通常抢不到前台，`NEEDS_ACTIVATION` + 限流的 16ms 重试；不要注入 Alt 或附加线程输入队列，
   会与全屏游戏互相抢焦点。
-- 日志标记（`ed_calls.log`）：`webview: low memory`、`webview: suspended`、`webview: resume`。
+- 日志格式：`[时间] [rust] LEVEL [scope] message`，标记如 `INFO [webview] resume`、`DEBUG [ipc] get_fileinfo`。
+- `AppState` 是路径、文件列表、搜索词、面板可见性等的单一来源；`ConfigManager.current` 是配置的唯一内存副本
+  （`ApiHelper.getConfig()` 读后刷新、`updateConfig()` 写后同步），`PreviewState` 管缩略图缓存与代际号，
+  `ClassViewState` 管分类选中/缓存/动画序号，`Layout` 管四个拖拽容器，`NavigationManager.desktopPathCache`
+  管桌面路径缓存。视图按钮从实际 DOM 推导是刻意保留的例外。
 
 ## 前端约定
 
@@ -111,5 +117,5 @@ frontend/resources/ed/*.js → window.pywebview.api.<method>(...args)
 
 - 前端仍无自动化测试（9 个脚本只做 `node --check` 语法校验），窗口、热区与交互验收仍靠真机清单；
   `06-events.js`（约 894 行）与 `07-globals.js`（约 874 行）是下一步可继续拆的对象。
-- Rust 纯函数已有 15 个单测；`api/files.rs` 仍承载文件操作适配，重逻辑继续往 `files.rs` 收。
+- Rust 纯函数已有 21 个单测；`api/files.rs` 仍承载文件操作适配，重逻辑继续往 `files.rs` 收。
 - 配置已类型化，但 `user_class.json` / `user_groups.json` / `cl_data.json` 仍是 `Value`，可按需再收。

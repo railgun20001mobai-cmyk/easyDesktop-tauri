@@ -14,7 +14,7 @@ cargo test
 cargo check
 ```
 
-- 单测覆盖排序合并、拼音索引、配置反序列化、版本来源；当前 15 个用例必须全过。
+- 单测覆盖排序合并、拼音索引、配置反序列化、版本来源、日志级别过滤；当前 21 个用例必须全过。
 - 前端拆分后先逐文件 `node --check frontend/resources/ed/*.js`，再按下方真机清单验证加载顺序。
 - 若报 `failed to read plugin permissions ... D:\easyDesktop-tauri\...`：这是搬家前 `target/` 的旧绝对路径，
   执行 `cargo clean`（只删构建缓存）后重跑。
@@ -45,9 +45,11 @@ npx @tauri-apps/cli@2 build --bundles nsis
 - [ ] 应用组：创建、改名、删除、加入/移出、分类里同步。
 - [ ] 全屏程序前台：热区不弹出、不抢焦点；退出全屏后恢复。
 - [ ] 多显示器/副屏：热区、坐标、尺寸正确；175% 与 250% 缩放各看一次。
-- [ ] 收起 20s 后日志出现 `webview: low memory`；90s 后 `webview: suspended`；呼出先 `webview: resume`，
-      无白帧。
-- [ ] 检查 `ed_calls.log`：无 panic/error/重复异常；日志不超过 512KB。
+- [ ] 收起 20s 后日志出现 `INFO [webview] low memory`；90s 后 `INFO [webview] suspended`；呼出先
+      `INFO [webview] resume`，无白帧。
+- [ ] 检查 `ed_calls.log`：无 panic/error/重复异常；日志不超过 512KB；release 版默认只有 INFO 及以上，
+      不应出现大量 `DEBUG [ipc]` 调用记录。
+- [ ] 分级过滤：以 `ED_LOG_LEVEL=warn` 启动开发版，确认 `INFO`/`DEBUG` 不再写入、`WARN`/`ERROR` 正常。
 
 ## 3. 内存回归
 

@@ -5,7 +5,7 @@
 把桌面图标收进一块贴边面板，桌面本身保持干净。
 鼠标移到屏幕角落（或按自定义热键）唤出面板，打开文件、进入目录、分类筛选、应用组、新建与重命名都在这一处完成。
 
-![license](https://img.shields.io/badge/license-GPL--3.0-green) ![platform](https://img.shields.io/badge/platform-Windows-blue) ![framework](https://img.shields.io/badge/Tauri-v2-orange) ![version](https://img.shields.io/badge/version-1.2.1-blueviolet)
+![license](https://img.shields.io/badge/license-GPL--3.0-green) ![platform](https://img.shields.io/badge/platform-Windows-blue) ![framework](https://img.shields.io/badge/Tauri-v2-orange) ![version](https://img.shields.io/badge/version-1.2.2-blueviolet)
 
 </div>
 
@@ -38,7 +38,7 @@
 
 ## 🚀 快速开始
 
-1. 到 [Releases](https://github.com/railgun20001mobai-cmyk/easyDesktop-tauri/releases) 下载 `easyDesktop-tauri_1.2.1_x64-setup.exe` 安装
+1. 到 [Releases](https://github.com/railgun20001mobai-cmyk/easyDesktop-tauri/releases) 下载 `easyDesktop-tauri_1.2.2_x64-setup.exe` 安装
 2. 启动后面板默认停在屏幕角落，鼠标移到左下角唤出，移开自动收起
 3. 想彻底腾出桌面：桌面右键 → 查看 → 取消勾选"显示桌面图标"，之后所有桌面文件都通过面板访问
 4. 程序常驻托盘，点托盘图标或齿轮进设置；卸载用安装目录里的 `uninstall.exe`
@@ -203,7 +203,7 @@ npx @tauri-apps/cli@2 build --bundles nsis
 | `user_groups.json` | 应用组 |
 | `desktopICO/` | 提取出的图标缓存，可安全删除（会自动重建） |
 | `background/` | 自定义背景图 |
-| `ed_calls.log` | 运行日志，用于排查问题 |
+| `ed_calls.log` | 运行日志，用于排查问题；默认记 Info 及以上，排查时可用环境变量 `ED_LOG_LEVEL=debug` 启动以记录全部调用 |
 
 ## ❓ 常见问题
 
