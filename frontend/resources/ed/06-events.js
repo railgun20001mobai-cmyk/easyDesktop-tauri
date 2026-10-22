@@ -816,8 +816,8 @@ const EventManager = {
                 console.log("非当前目录")
                 // document.getElementById("menuNewGroup").style.display="none"
                 // document.getElementById("menuAddToGroup").style.display="none"
-                Utils.uiBoxDisplayChange(document.getElementById("menuNewGroup"),none,true)
-                Utils.uiBoxDisplayChange(document.getElementById("menuAddToGroup"),none,false)
+                Utils.uiBoxDisplayChange(document.getElementById("menuNewGroup"),"none",true)
+                Utils.uiBoxDisplayChange(document.getElementById("menuAddToGroup"),"none",false)
             }
         });
         // 空白区域右键菜单
