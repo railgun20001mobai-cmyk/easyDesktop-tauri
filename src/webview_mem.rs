@@ -3,6 +3,8 @@
 //! 隐藏后先把控制器设为不可见（TrySuspend 的硬性前提），再降内存目标到 Low，
 //! 最后尝试挂起整个 WebView2；呼出时先恢复可见/Resume 再显示，避免空白首帧。
 
+use std::sync::atomic::{AtomicU8, Ordering};
+
 use tauri::Manager;
 use webview2_com::Microsoft::Web::WebView2::Win32::{
     ICoreWebView2, ICoreWebView2_19, ICoreWebView2_3, ICoreWebView2Controller,
@@ -11,6 +13,17 @@ use webview2_com::Microsoft::Web::WebView2::Win32::{
 };
 use webview2_com::TrySuspendCompletedHandler;
 use windows::core::Interface;
+
+/// WebView2 当前省电档位：0=正常，1=低内存，2=已悬挂。
+///
+/// 生命周期：进程启动为 0；隐藏 20s 成功降到 Low 置 1，90s 挂起成功置 2；
+/// 每次 resume 归 0。只由本模块写，show_panel 通过 [`level`] 读取以决定
+/// 出窗前的预热缓冲。原子量，可在任意线程读写。
+static POWER_LEVEL: AtomicU8 = AtomicU8::new(0);
+
+pub fn level() -> u8 {
+    POWER_LEVEL.load(Ordering::Relaxed)
+}
 
 fn with_webview<F>(handle: &tauri::AppHandle, f: F)
 where
@@ -47,6 +60,7 @@ pub fn set_low(handle: &tauri::AppHandle) {
         }
         .is_ok()
         {
+            POWER_LEVEL.store(1, Ordering::Relaxed);
             crate::logging::info("webview", "webview: low memory");
         }
     });
@@ -64,6 +78,7 @@ pub fn resume(handle: &tauri::AppHandle) {
                 core19.SetMemoryUsageTargetLevel(COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL)
             };
         }
+        POWER_LEVEL.store(0, Ordering::Relaxed);
         crate::logging::info("webview", "webview: resume");
     });
 }
@@ -75,6 +90,7 @@ pub fn try_suspend(handle: &tauri::AppHandle) {
         };
         let handler = TrySuspendCompletedHandler::create(Box::new(|hr, suspended| {
             if hr.is_ok() && suspended {
+                POWER_LEVEL.store(2, Ordering::Relaxed);
                 crate::logging::info("webview", "webview: suspended");
             } else {
                 crate::logging::warn(

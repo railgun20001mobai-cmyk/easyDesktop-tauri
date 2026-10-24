@@ -40,8 +40,11 @@
 - 根因：`TrySuspend` 前没有 `SetIsVisible(false)` 会失败；呼出时先 `show()` 再 `Resume()` 会白屏。
 - 规则：隐藏顺序 = `hide()` → `SetIsVisible(false)` → 20s low → 90s suspend；呼出顺序 =
   `SetIsVisible(true)` + `Resume()` → `show()`。定时器必须带 `POWER_GEN` 代际号；缓存必须有上限和释放时机。
+- 预热：`show()` 前要留合成时间，且按 `webview_mem::level()` 分档——正常 60ms、低内存 180ms、
+  悬挂 320ms。固定 60ms 在悬挂唤醒时会"窗口先出、图标区空白随后才铺满"。
 - 证据：`cee321a`、`0ef0885`。
-- 验证：收起 20s 查 `webview: low memory`、90s 查 `webview: suspended`、呼出查 `webview: resume`，且无白帧。
+- 验证：收起 20s 查 `webview: low memory`、90s 查 `webview: suspended`、呼出查 `webview: resume`
+  与 `show: warmup ... (level=N)`，且无白帧；久闲（>90s）唤醒重点看首帧图标是否完整。
 
 ## 6. 动画被打断留下退场状态
 

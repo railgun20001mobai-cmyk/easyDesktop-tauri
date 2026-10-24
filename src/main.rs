@@ -301,6 +301,18 @@ const EASE_ENTER: (f64, f64, f64, f64) = (0.2, 0.0, 0.0, 1.0);
 /// 强调型加速 cubic-bezier(0.3, 0, 0.8, 0.15) —— 退场
 const EASE_EXIT: (f64, f64, f64, f64) = (0.3, 0.0, 0.8, 0.15);
 
+/// 出窗前的预热缓冲：WebView2 越冷，重绘图标层越慢。
+///
+/// level: 0=正常 1=低内存 2=已悬挂（见 webview_mem::level）。
+/// 悬挂唤醒若沿用正常档的 60ms，窗口滑出时图标区还是空白，随后才铺满。
+fn show_warmup_ms(power_level: u8) -> u64 {
+    match power_level {
+        2 => 320,
+        1 => 180,
+        _ => 60,
+    }
+}
+
 /// 逐帧滑动窗口，约 6ms 一帧（约 160fps）
 ///
 /// `exit = true` 用退场曲线（加速），否则用进场曲线（减速）。
@@ -478,6 +490,8 @@ fn open_js() -> String {
 
 fn show_panel(handle: &tauri::AppHandle) {
     POWER_GEN.fetch_add(1, Ordering::SeqCst);
+    // 先取省电档位（resume 会把它归零），据此决定出窗前的预热缓冲
+    let power_level = webview_mem::level();
     // 先投递 Resume，等主线程处理时再摆位/显示；挂起中的 WebView2 需要先恢复
     webview_mem::resume(handle);
     SHOWN_AT.store(now_ms(), Ordering::SeqCst);
@@ -505,10 +519,18 @@ fn show_panel(handle: &tauri::AppHandle) {
     });
     // 阶段二：重绘后留一拍让 WebView2 在屏幕外完成合成，再 show。
     // 否则首帧没合成完，用户看到"窗口框先出现、内容慢一拍弹出"。
+    // 久闲唤醒（低内存/悬挂）要按档位加长预热，等图标层重绘完再滑出。
+    let warmup_ms = show_warmup_ms(power_level);
+    if power_level > 0 {
+        logging::info(
+            "window",
+            format!("show: warmup {warmup_ms}ms (level={power_level})"),
+        );
+    }
     let h3 = handle.clone();
     let h4 = handle.clone();
     std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(60));
+        std::thread::sleep(Duration::from_millis(warmup_ms));
         // 这期间发生过新的收起/呼出就作废本次 show
         if SLIDE_GEN.load(Ordering::SeqCst) != gen {
             return;
