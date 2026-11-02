@@ -16,10 +16,9 @@ use std::time::Duration;
 use tauri::{Manager, PhysicalPosition, PhysicalSize, WebviewWindow};
 
 static WINDOW_VISIBLE: AtomicBool = AtomicBool::new(false);
-/// 每次呼出/收起都递增，用来作废旧的隐藏降内存/挂起定时器
+/// 每次呼出/收起都递增，用来作废旧的隐藏降内存定时器
 static POWER_GEN: AtomicU64 = AtomicU64::new(0);
 const LOW_MEM_AFTER: Duration = Duration::from_secs(20);
-const SUSPEND_AFTER: Duration = Duration::from_secs(90);
 static LOCKED: AtomicBool = AtomicBool::new(false);
 /// 可见性锁的引用计数：设置面板锁着时，子对话框（重命名/删除等）关闭会无条件解锁，
 /// 用计数就不会把设置面板的锁一起清掉（问：设置到一半鼠标滑出去面板自己关了）
@@ -303,11 +302,10 @@ const EASE_EXIT: (f64, f64, f64, f64) = (0.3, 0.0, 0.8, 0.15);
 
 /// 出窗前的预热缓冲：WebView2 越冷，重绘图标层越慢。
 ///
-/// level: 0=正常 1=低内存 2=已悬挂（见 webview_mem::level）。
-/// 悬挂唤醒若沿用正常档的 60ms，窗口滑出时图标区还是空白，随后才铺满。
+/// level: 0=正常 1=低内存（见 webview_mem::level）。
+/// 低内存唤醒若沿用正常档的 60ms，窗口滑出时图标区还是空白，随后才铺满。
 fn show_warmup_ms(power_level: u8) -> u64 {
     match power_level {
-        2 => 320,
         1 => 180,
         _ => 60,
     }
@@ -597,10 +595,12 @@ fn hide_panel(handle: &tauri::AppHandle) {
             let _ = done_tx.send(());
         });
         let _ = done_rx.recv_timeout(Duration::from_millis(500));
-        // 窗口隐藏后同步把 WebView2 控制器设为不可见：这是 TrySuspend 成功的前提
+        // 窗口隐藏后同步把 WebView2 控制器设为不可见，让渲染层释放合成表面
         webview_mem::set_invisible(&h);
 
-        // 隐藏后分两档降内存；期间只要再次呼出/收起，power_gen 就会变化并让这里直接退出
+        // 隐藏后只降一档低内存，不再挂起 WebView2：挂起省的是常驻工作集，
+        // 唤醒却要把换出的页读回，久闲首次呼出会卡顿。
+        // 期间只要再次呼出/收起，power_gen 就会变化并让这里直接退出
         let h3 = h.clone();
         std::thread::spawn(move || {
             std::thread::sleep(LOW_MEM_AFTER);
@@ -610,14 +610,6 @@ fn hide_panel(handle: &tauri::AppHandle) {
                 return;
             }
             webview_mem::set_low(&h3);
-
-            std::thread::sleep(SUSPEND_AFTER.saturating_sub(LOW_MEM_AFTER));
-            if POWER_GEN.load(Ordering::SeqCst) != power_gen
-                || WINDOW_VISIBLE.load(Ordering::SeqCst)
-            {
-                return;
-            }
-            webview_mem::try_suspend(&h3);
         });
     });
 }

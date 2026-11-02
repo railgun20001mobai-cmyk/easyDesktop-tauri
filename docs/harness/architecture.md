@@ -44,7 +44,7 @@ frontend/resources/ed/*.js → window.pywebview.api.<method>(...args)
 | `src/icons.rs` | 系统图标提取与缓存、自定义图标 | `.lnk` 目标解析有历史坑 |
 | `src/preview.rs` | 图片缩略图、有上限的 LRU | 尺寸与内存强相关 |
 | `src/win32.rs` | 前台窗口、全屏检测、圆角、光标、DPI、屏幕尺寸、本地时间 | 仅 Windows |
-| `src/webview_mem.rs` | 隐藏后 invisible / low memory / suspend，呼出 resume | 时序不能反 |
+| `src/webview_mem.rs` | 隐藏后 invisible / low memory，呼出 resume | 时序不能反 |
 | `frontend/resources/ed/` | 前端主逻辑，9 个按序加载的经典脚本 | 加载顺序见下，拆文件不能改变顺序 |
 | `frontend/theme/frame.css` | 布局与动效 token | 与 JS/Rust 时长同步 |
 
@@ -89,8 +89,9 @@ frontend/resources/ed/*.js → window.pywebview.api.<method>(...args)
 - 单主窗口 `main`：启动隐藏、透明、无边框、置顶、`skipTaskbar`、关闭拖放、acrylic 背景。
 - 呼出：角落热区轮询 + 全局热键 + 托盘。防打扰：`fdr && foreground_is_fullscreen()` 时不触发。
 - 可见性锁：`LOCK_COUNT` 引用计数，设置面板与子对话框共用；计数归零才允许自动收起。
-- 收起：滑出（`PANEL_OUT_MS` 240ms）→ `hide()` → WebView2 `SetIsVisible(false)` → 20s 降内存 →
-  90s `TrySuspend`。`POWER_GEN` 作废旧定时器，`SLIDE_GEN` 作废被打断的滑动。
+- 收起：滑出（`PANEL_OUT_MS` 240ms）→ `hide()` → WebView2 `SetIsVisible(false)` → 20s 降内存。
+  不再挂起（挂起唤醒要读回换出的页，久闲首次呼出会卡）。`POWER_GEN` 作废旧定时器，
+  `SLIDE_GEN` 作废被打断的滑动。
 - 呼出：先 `SetIsVisible(true)` + `Resume()` 再 `show()`，否则会闪一帧空白。
 - 热区武装：收起后鼠标必须先离开热区再进入，避免“收起末尾闪一下”。
 - 焦点：后台进程通常抢不到前台，`NEEDS_ACTIVATION` + 限流的 16ms 重试；不要注入 Alt 或附加线程输入队列，
