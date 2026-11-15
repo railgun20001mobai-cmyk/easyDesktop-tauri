@@ -60,13 +60,18 @@ pub(super) fn dispatch(method: &str, args: &[Value], app: &tauri::AppHandle) -> 
             if part == "auto_start_priority" {
                 crate::set_logon_task(app, data.as_bool().unwrap_or(false));
             }
-            // 触发方式或快捷键改了要重新注册
+            // 触发方式或快捷键改了要重新注册，并把托盘提示同步成新方式
             if part == "cf_type" || part == "cf_hotkey" {
                 crate::register_hotkey(app);
+                crate::update_tray_tooltip(app);
             }
             // 全屏模式 / 呼出位置改了，面板要立刻重排（否则要等下次呼出才生效）
             if part == "full_screen" || part == "outPos" {
                 crate::reapply_rect(app);
+                // 角落触发的提示带位置（左下角/左上角…），位置变了也要刷新
+                if part == "outPos" {
+                    crate::update_tray_tooltip(app);
+                }
             }
             Value::Null
         }

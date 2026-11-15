@@ -88,6 +88,8 @@ frontend/resources/ed/*.js → window.pywebview.api.<method>(...args)
 
 - 单主窗口 `main`：启动隐藏、透明、无边框、置顶、`skipTaskbar`、关闭拖放、acrylic 背景。
 - 呼出：角落热区轮询 + 全局热键 + 托盘。防打扰：`fdr && foreground_is_fullscreen()` 时不触发。
+  Win+Shift 是裸修饰键组合，`RegisterHotKey` 注册不了，由 `bare_hotkey.rs` 用 Raw Input
+  （`RIDEV_INPUTSINK`）后台监听：两键按下期间无其它主键、松开任意一个才触发。
 - 可见性锁：`LOCK_COUNT` 引用计数，设置面板与子对话框共用；计数归零才允许自动收起。
 - 收起：滑出（`PANEL_OUT_MS` 240ms）→ `hide()` → WebView2 `SetIsVisible(false)` → 20s 降内存。
   不再挂起（挂起唤醒要读回换出的页，久闲首次呼出会卡）。`POWER_GEN` 作废旧定时器，

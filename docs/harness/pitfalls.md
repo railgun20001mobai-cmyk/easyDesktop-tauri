@@ -114,3 +114,16 @@
 - 规则：只保留 `order::merge_order` 一份实现，启动与渲染都调用它；改规则先改 `src/order.rs` 的单测。
 - 证据：1.2.0 前 `config.rs::merge_desktop_order` 与 `files.rs::order_items` 各写一套。
 - 验证：`cargo test` 的 `new_item_uses_original_index_not_remaining_index`；真机新增文件后重启对比顺序。
+
+## 14. Win+Shift 预设注册失败 / 托盘提示不更新
+
+- 症状：设置里选 win+shift 后完全没反应；托盘 hover 仍显示旧快捷键（如换到 Win+Esc 后还写 Ctrl+Alt+Q）。
+- 根因：`RegisterHotKey` 与 tauri 全局快捷键插件都要求「修饰键 + 一个非修饰主键」，
+  `Super+Shift` 在解析阶段就报 only one main key，根本没走到注册；托盘 tooltip 之前写死在代码里。
+- 规则：裸修饰键组合（Win+Shift）走 `src/bare_hotkey.rs` 的 Raw Input 监听
+  （`RIDEV_INPUTSINK`）：两键按下期间没有其它主键、松开任意一个时触发；带主键的组合
+  （Win+Shift+S / 方向键）不误触。不要改成 `WH_KEYBOARD_LL`（对游戏反作弊不友好）。
+  托盘文字由 `tray_tooltip_text()` 统一生成，`cf_type` / `cf_hotkey` / `outPos` 变更后必须调用
+  `update_tray_tooltip()`。
+- 验证：日志查 `Win+Shift 裸组合键监听已启动 (Raw Input)`、`tray: tooltip 更新为 ...`；
+  真机按 Win+Shift 面板出现，夹带主键不触发，松开第二个修饰键不重复开合。

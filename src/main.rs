@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod api;
+mod bare_hotkey;
 mod config;
 mod files;
 mod icons;
@@ -626,6 +627,76 @@ fn toggle_panel(app: &tauri::AppHandle) {
     }
 }
 
+/// 配置里的自定义热键（如 ctrl+alt+q）转成显示写法（Ctrl+Alt+Q）
+fn pretty_hotkey(raw: &str) -> String {
+    raw.split('+')
+        .filter_map(|p| {
+            let k = p.trim().to_lowercase();
+            if k.is_empty() {
+                return None;
+            }
+            Some(match k.as_str() {
+                "ctrl" => "Ctrl".to_string(),
+                "alt" => "Alt".to_string(),
+                "shift" => "Shift".to_string(),
+                "win" => "Win".to_string(),
+                "esc" | "escape" => "Esc".to_string(),
+                "space" => "Space".to_string(),
+                "tab" => "Tab".to_string(),
+                "enter" => "Enter".to_string(),
+                other if other.chars().count() == 1 => other.to_uppercase(),
+                other => {
+                    let mut chars = other.chars();
+                    match chars.next() {
+                        Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(),
+                        None => String::new(),
+                    }
+                }
+            })
+        })
+        .collect::<Vec<_>>()
+        .join("+")
+}
+
+fn out_pos_label() -> &'static str {
+    match out_pos().as_str() {
+        "2" => "左上角",
+        "3" => "底部中间",
+        "4" => "顶部中间",
+        _ => "左下角",
+    }
+}
+
+/// 托盘提示必须跟着当前触发方式走；改设置时由 update_tray_tooltip 刷新
+fn tray_tooltip_text() -> String {
+    let cfg = config::get();
+    let hint = match cfg.cf_type.as_str() {
+        "2" => "Win+Shift 呼出面板".to_string(),
+        "3" => "Win+Esc 呼出面板".to_string(),
+        "4" => {
+            let hk = pretty_hotkey(&cfg.cf_hotkey);
+            if hk.is_empty() {
+                "组合热键呼出面板".to_string()
+            } else {
+                format!("{hk} 呼出面板")
+            }
+        }
+        _ => format!("鼠标移到{}呼出面板", out_pos_label()),
+    };
+    format!("EasyDesktop —— 已启动（{hint}）")
+}
+
+/// 触发方式 / 呼出位置改了之后调用，避免托盘一直显示旧快捷键
+pub fn update_tray_tooltip(app: &tauri::AppHandle) {
+    let text = tray_tooltip_text();
+    if let Some(tray) = app.tray_by_id("ed-tray") {
+        match tray.set_tooltip(Some(text.as_str())) {
+            Ok(_) => logging::info("tray", format!("tray: tooltip 更新为 {}", text)),
+            Err(e) => logging::warn("tray", format!("tray: tooltip 更新失败: {}", e)),
+        }
+    }
+}
+
 /// 托盘图标：给用户一个"程序在跑"的可见标志，右键菜单可呼出/退出
 fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     use tauri::menu::{Menu, MenuItem};
@@ -635,8 +706,9 @@ fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     let quit = MenuItem::with_id(app, "quit", "退出 EasyDesktop", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &quit])?;
 
+    let tooltip = tray_tooltip_text();
     let mut builder = TrayIconBuilder::with_id("ed-tray")
-        .tooltip("EasyDesktop —— 已启动（Ctrl+Alt+Q 呼出面板）")
+        .tooltip(tooltip.as_str())
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
@@ -661,7 +733,7 @@ fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
         logging::warn("tray", "tray: 未取到默认窗口图标");
     }
     builder.build(app)?;
-    logging::info("tray", "tray: 托盘图标已创建");
+    logging::info("tray", format!("tray: 托盘图标已创建，tooltip={}", tooltip));
     Ok(())
 }
 
@@ -916,15 +988,23 @@ fn register_hotkey(app: &tauri::AppHandle) {
     let cf_type = cfg.cf_type.clone();
     let custom = cfg.cf_hotkey.clone();
 
+    let gs = app.global_shortcut();
+    let _ = gs.unregister_all();
+
     let spec = match cf_type.as_str() {
-        "2" => Some("Super+Shift".to_string()),
+        // RegisterHotKey 必须有非修饰主键，Super+Shift 注册不了；
+        // 改用 Raw Input 监听裸组合键（见 bare_hotkey.rs）
+        "2" => {
+            crate::bare_hotkey::set_enabled(true, app.clone());
+            return;
+        }
         "3" => Some("Super+Escape".to_string()),
         "4" => normalize_hotkey(&custom),
         _ => None, // 1 = 仅角落触发
     };
 
-    let gs = app.global_shortcut();
-    let _ = gs.unregister_all();
+    // 切回系统热键/角落触发时，必须把裸组合键监听一起关掉
+    crate::bare_hotkey::set_enabled(false, app.clone());
 
     let Some(spec) = spec else {
         logging::info("hotkey", "hotkey: 仅角落触发，未注册全局热键");
